@@ -143,6 +143,34 @@ Hosted:
 
 `GET /api/health/` returns service and database readiness.
 
+## Progress
+
+Current status as of `2026-05-19`:
+
+- Completed: Postgres-only local runtime with Docker Compose
+- Completed: Django project wiring, DRF install, `TripRequest` model, and migrations
+- Completed: `POST /api/trips/plan/`, `GET /api/trips/{id}/`, and `GET /api/health/`
+- Completed: Vite React scaffold from official docs
+- Completed: Material UI workspace shell with form submission and result tabs
+- Completed: backend tests for API contract and request validation
+- Completed: frontend production build verification
+- Completed: replace the deterministic placeholder schedule with a real HOS scheduler
+- Completed: scheduler tests for break insertion, second-shift rollover, and cycle restart behavior
+- In progress: geocoding and routing adapters with cache
+- Pending: map rendering, daily log drawing, and PDF export
+
+Current live local URLs:
+
+- Frontend: `http://127.0.0.1:5173/`
+- Backend: `http://127.0.0.1:8000/`
+
+Current technical posture:
+
+- The vertical slice is working end to end.
+- The API contract is stable enough for the frontend to keep moving.
+- The HOS engine is now the source of truth for the generated schedule.
+- The next highest-value step is routing and geocoding, because the schedule is live but the route shape is still static.
+
 ## Implementation Plan
 
 1. Build the tracer bullet:
