@@ -1,4 +1,4 @@
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api";
+export const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api";
 
 export async function createTripPlan(payload) {
   const response = await fetch(`${apiBaseUrl}/trips/plan/`, {
@@ -15,6 +15,10 @@ export async function createTripPlan(payload) {
   }
 
   return data;
+}
+
+export function getTripPdfUrl(tripId) {
+  return `${apiBaseUrl}/trips/${tripId}/pdf/`;
 }
 
 function extractErrorMessage(data) {

@@ -78,6 +78,28 @@ class TripPlanApiTests(TestCase):
         self.assertEqual(response.data["current_location"], "Chicago, IL")
         self.assertIn("route", response.data["plan_data"])
 
+    @patch("trips.views.build_live_route_template")
+    def test_trip_pdf_returns_pdf_attachment(self, mock_route_template):
+        mock_route_template.return_value = _default_route_template()
+
+        create_response = self.client.post(
+            reverse("plan-trip"),
+            {
+                "current_location": "Chicago, IL",
+                "pickup_location": "Indianapolis, IN",
+                "dropoff_location": "Atlanta, GA",
+                "departure_at": "2026-05-19T08:00:00Z",
+                "current_cycle_used_hours": "8.00",
+            },
+            format="json",
+        )
+
+        trip_id = create_response.data["trip_id"]
+        response = self.client.get(reverse("trip-pdf", kwargs={"trip_id": trip_id}))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response["Content-Type"], "application/pdf")
+
 
 class HosPlannerTests(TestCase):
     def test_standard_route_inserts_30_minute_break_after_eight_hours_of_driving(self):
@@ -93,6 +115,11 @@ class HosPlannerTests(TestCase):
         self.assertEqual(break_events[0]["duration_minutes"], 30)
         self.assertEqual(plan["daily_logs"][0]["totals_minutes"]["driving"], 540)
         self.assertEqual(plan["daily_logs"][0]["totals_minutes"]["on_duty"], 150)
+        self.assertIn("<svg", plan["daily_logs"][0]["sheet_svg"])
+        self.assertIn("Original - File at home terminal.", plan["daily_logs"][0]["sheet_svg"])
+        self.assertIn("Shipping", plan["daily_logs"][0]["sheet_svg"])
+        self.assertIn("Recap:", plan["daily_logs"][0]["sheet_svg"])
+        self.assertIn("70 Hour / 8 Day", plan["daily_logs"][0]["sheet_svg"])
 
     def test_long_drive_spills_into_second_shift_after_ten_hour_rest(self):
         long_route = RouteTemplate(

@@ -159,7 +159,9 @@ Current status as of `2026-05-19`:
 - Completed: cached geocoding and OSRM routing adapters backed by Postgres
 - Completed: route geometry, waypoints, and live route output in the API response
 - Completed: route map rendering in the React workspace
-- Pending: daily log sheet drawing and PDF export
+- Completed: daily log sheet SVG rendering from generated duty events
+- Completed: PDF export from the same daily log model
+- Completed: align the rendered log sheet layout more closely with the FMCSA paper form reference in `blank-paper-log.png`
 
 Current live local URLs:
 
@@ -172,7 +174,8 @@ Current technical posture:
 - The API contract is stable enough for the frontend to keep moving.
 - The HOS engine is now the source of truth for the generated schedule.
 - Route geometry and travel duration are now live and cached.
-- The next highest-value step is ELD sheet drawing and PDF export, because the core planner and route layers are now in place.
+- The core assignment flow is now implemented end to end.
+- The latest polish pass fixed log-sheet header/grid overlap, preview scaling, border padding, remarks-section collisions, and duty-line join artifacts.
 
 ## Implementation Plan
 

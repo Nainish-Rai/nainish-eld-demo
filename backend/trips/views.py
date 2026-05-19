@@ -1,12 +1,14 @@
 from decimal import Decimal
+from io import BytesIO
 
 from django.db import connection
-from django.http import JsonResponse
+from django.http import FileResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
+from .eld_renderer import build_trip_pdf
 from .models import TripRequest
 from .planner import TripPlanningInput, build_trip_plan
 from .routing import RoutingServiceError, build_live_route_template
@@ -74,10 +76,12 @@ def get_trip(request, trip_id):
 
 @api_view(["GET"])
 def trip_pdf(request, trip_id):
-    return Response(
-        {
-            "detail": "PDF export is not implemented yet.",
-            "trip_id": str(trip_id),
-        },
-        status=status.HTTP_501_NOT_IMPLEMENTED,
+    trip_request = get_object_or_404(TripRequest, id=trip_id)
+    pdf_bytes = build_trip_pdf(trip_request.plan_data, str(trip_request.id))
+
+    return FileResponse(
+        BytesIO(pdf_bytes),
+        as_attachment=True,
+        filename=f"trip-{trip_request.id}-eld-logs.pdf",
+        content_type="application/pdf",
     )

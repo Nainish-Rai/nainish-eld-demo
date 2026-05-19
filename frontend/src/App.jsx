@@ -23,8 +23,9 @@ import PlayArrowRoundedIcon from "@mui/icons-material/PlayArrowRounded";
 import RouteRoundedIcon from "@mui/icons-material/RouteRounded";
 import ScheduleRoundedIcon from "@mui/icons-material/ScheduleRounded";
 import DescriptionRoundedIcon from "@mui/icons-material/DescriptionRounded";
+import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
 
-import { createTripPlan } from "./api";
+import { createTripPlan, getTripPdfUrl } from "./api";
 import { RouteMap } from "./components/RouteMap";
 import { plannerTheme } from "./theme";
 
@@ -229,7 +230,21 @@ function App() {
                         The layout is ready for route, schedule, logs, and export panels.
                       </Typography>
                     </Box>
-                    {planResult ? <Chip label={`Trip ${planResult.trip_id.slice(0, 8)}`} color="secondary" /> : null}
+                    {planResult ? (
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <Chip label={`Trip ${planResult.trip_id.slice(0, 8)}`} color="secondary" />
+                        <Button
+                          component="a"
+                          href={getTripPdfUrl(planResult.trip_id)}
+                          target="_blank"
+                          rel="noreferrer"
+                          variant="outlined"
+                          startIcon={<DownloadRoundedIcon />}
+                        >
+                          PDF
+                        </Button>
+                      </Stack>
+                    ) : null}
                   </Box>
 
                   <Tabs
@@ -306,16 +321,47 @@ function ResultPanel({ activeTab, planResult }) {
   if (activeTab === "logs") {
     return (
       <Stack spacing={2}>
-        <MetricRow
-          title="Daily log totals"
-          items={[
-            `Driving: ${plan.daily_logs[0].totals_minutes.driving} min`,
-            `On duty: ${plan.daily_logs[0].totals_minutes.on_duty} min`,
-            `Sleeper: ${plan.daily_logs[0].totals_minutes.sleeper_berth} min`,
-          ]}
-        />
-        <Alert severity="warning">{plan.daily_logs[0].notes}</Alert>
-        <DutyEventList events={plan.duty_events} />
+        {plan.daily_logs.map((dailyLog) => (
+          <Paper
+            key={dailyLog.date}
+            elevation={0}
+            sx={{ p: 2, border: "1px solid rgba(24,38,31,0.08)", bgcolor: "#fffdf8" }}
+          >
+            <Stack spacing={2}>
+              <MetricRow
+                title={`Daily log · ${dailyLog.date}`}
+                items={[
+                  `Driving: ${dailyLog.totals_minutes.driving} min`,
+                  `On duty: ${dailyLog.totals_minutes.on_duty} min`,
+                  `Sleeper: ${dailyLog.totals_minutes.sleeper_berth} min`,
+                  `Off duty: ${dailyLog.totals_minutes.off_duty} min`,
+                ]}
+              />
+              <Alert severity="info">{dailyLog.notes}</Alert>
+              <Paper
+                elevation={0}
+                sx={{
+                  overflow: "auto",
+                  border: "1px solid rgba(24,38,31,0.08)",
+                  bgcolor: "#ffffff",
+                  maxWidth: "100%",
+                }}
+              >
+                <Box
+                  sx={{
+                    width: "100%",
+                    "& svg": {
+                      display: "block",
+                      width: "100%",
+                      height: "auto",
+                    },
+                  }}
+                  dangerouslySetInnerHTML={{ __html: dailyLog.sheet_svg }}
+                />
+              </Paper>
+            </Stack>
+          </Paper>
+        ))}
       </Stack>
     );
   }
