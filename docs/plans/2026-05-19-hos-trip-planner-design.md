@@ -156,8 +156,10 @@ Current status as of `2026-05-19`:
 - Completed: frontend production build verification
 - Completed: replace the deterministic placeholder schedule with a real HOS scheduler
 - Completed: scheduler tests for break insertion, second-shift rollover, and cycle restart behavior
-- In progress: geocoding and routing adapters with cache
-- Pending: map rendering, daily log drawing, and PDF export
+- Completed: cached geocoding and OSRM routing adapters backed by Postgres
+- Completed: route geometry, waypoints, and live route output in the API response
+- Completed: route map rendering in the React workspace
+- Pending: daily log sheet drawing and PDF export
 
 Current live local URLs:
 
@@ -169,7 +171,8 @@ Current technical posture:
 - The vertical slice is working end to end.
 - The API contract is stable enough for the frontend to keep moving.
 - The HOS engine is now the source of truth for the generated schedule.
-- The next highest-value step is routing and geocoding, because the schedule is live but the route shape is still static.
+- Route geometry and travel duration are now live and cached.
+- The next highest-value step is ELD sheet drawing and PDF export, because the core planner and route layers are now in place.
 
 ## Implementation Plan
 

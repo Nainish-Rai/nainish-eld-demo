@@ -34,6 +34,7 @@ class RouteLeg:
     end_location: str
     duration_minutes: int
     distance_miles: Decimal
+    geometry_coordinates: tuple[tuple[float, float], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -41,6 +42,8 @@ class RouteTemplate:
     provider: str
     notes: str
     legs: tuple[RouteLeg, ...]
+    geometry_coordinates: tuple[tuple[float, float], ...] = ()
+    waypoints: tuple[dict, ...] = ()
 
     @property
     def total_distance_miles(self) -> Decimal:
@@ -71,18 +74,28 @@ DEFAULT_ROUTE_TEMPLATE = RouteTemplate(
     legs=(
         RouteLeg(
             label="Drive to pickup",
-            start_location="current_location",
-            end_location="pickup_location",
+            start_location="Chicago, IL",
+            end_location="Indianapolis, IN",
             duration_minutes=90,
             distance_miles=Decimal("120.0"),
         ),
         RouteLeg(
             label="Drive to dropoff",
-            start_location="pickup_location",
-            end_location="dropoff_location",
+            start_location="Indianapolis, IN",
+            end_location="Atlanta, GA",
             duration_minutes=450,
             distance_miles=Decimal("420.0"),
         ),
+    ),
+    geometry_coordinates=(
+        (41.8781, -87.6298),
+        (39.7684, -86.1581),
+        (33.7490, -84.3880),
+    ),
+    waypoints=(
+        {"kind": "current", "query": "Chicago, IL", "formatted_address": "Chicago, IL", "latitude": 41.8781, "longitude": -87.6298},
+        {"kind": "pickup", "query": "Indianapolis, IN", "formatted_address": "Indianapolis, IN", "latitude": 39.7684, "longitude": -86.1581},
+        {"kind": "dropoff", "query": "Atlanta, GA", "formatted_address": "Atlanta, GA", "latitude": 33.7490, "longitude": -84.3880},
     ),
 )
 
@@ -136,6 +149,21 @@ class HosPlanBuilder:
                 "distance_miles": float(self.route_template.total_distance_miles),
                 "drive_hours": _decimal_string(Decimal(self.route_template.total_drive_minutes) / Decimal("60")),
                 "notes": self.route_template.notes,
+                "geometry": {
+                    "type": "LineString",
+                    "coordinates": [[lon, lat] for lat, lon in self.route_template.geometry_coordinates],
+                },
+                "waypoints": list(self.route_template.waypoints),
+                "legs": [
+                    {
+                        "label": leg.label,
+                        "start_location": leg.start_location,
+                        "end_location": leg.end_location,
+                        "duration_minutes": leg.duration_minutes,
+                        "distance_miles": float(leg.distance_miles),
+                    }
+                    for leg in self.route_template.legs
+                ],
             },
             "stops": _build_stops(self.events),
             "duty_events": [_serialize_event(event) for event in self.events],
@@ -181,7 +209,7 @@ class HosPlanBuilder:
                 continue
 
             chunk_miles = _allocate_miles(leg.distance_miles, leg.duration_minutes, miles_remaining, chunk_minutes)
-            self._append_event("driving", chunk_minutes, self._resolve_location(leg.start_location), leg.label, chunk_miles)
+            self._append_event("driving", chunk_minutes, leg.start_location, leg.label, chunk_miles)
             self._consume_shift_time(chunk_minutes)
             self.shift_driving_minutes += chunk_minutes
             self.driving_since_break_minutes += chunk_minutes
@@ -267,9 +295,6 @@ class HosPlanBuilder:
 
     def _consume_shift_time(self, duration_minutes: int) -> None:
         self.shift_elapsed_minutes += duration_minutes
-
-    def _resolve_location(self, alias: str) -> str:
-        return getattr(self.trip_input, alias)
 
     def _current_location(self) -> str:
         if not self.events:

@@ -9,6 +9,7 @@ from rest_framework.response import Response
 
 from .models import TripRequest
 from .planner import TripPlanningInput, build_trip_plan
+from .routing import RoutingServiceError, build_live_route_template
 from .serializers import TripPlanRequestSerializer, TripRequestSerializer
 
 
@@ -33,7 +34,17 @@ def plan_trip(request):
         departure_at_iso=validated["departure_at"].isoformat(),
         current_cycle_used_hours=Decimal(validated["current_cycle_used_hours"]),
     )
-    plan_data = build_trip_plan(trip_input)
+
+    try:
+        route_template = build_live_route_template(
+            current_location=trip_input.current_location,
+            pickup_location=trip_input.pickup_location,
+            dropoff_location=trip_input.dropoff_location,
+        )
+    except RoutingServiceError as error:
+        return Response({"detail": str(error)}, status=status.HTTP_502_BAD_GATEWAY)
+
+    plan_data = build_trip_plan(trip_input, route_template=route_template)
 
     trip_request = TripRequest.objects.create(
         current_location=trip_input.current_location,

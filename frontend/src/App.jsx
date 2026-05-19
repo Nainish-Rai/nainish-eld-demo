@@ -25,6 +25,7 @@ import ScheduleRoundedIcon from "@mui/icons-material/ScheduleRounded";
 import DescriptionRoundedIcon from "@mui/icons-material/DescriptionRounded";
 
 import { createTripPlan } from "./api";
+import { RouteMap } from "./components/RouteMap";
 import { plannerTheme } from "./theme";
 
 const initialForm = {
@@ -286,6 +287,7 @@ function ResultPanel({ activeTab, planResult }) {
   if (activeTab === "route") {
     return (
       <Stack spacing={2}>
+        <RouteMap geometry={plan.route.geometry} waypoints={plan.route.waypoints} />
         <MetricRow
           title="Route summary"
           items={[
@@ -295,6 +297,7 @@ function ResultPanel({ activeTab, planResult }) {
           ]}
         />
         <Alert severity="info">{plan.route.notes}</Alert>
+        <LegList legs={plan.route.legs} />
         <StopList stops={plan.stops} />
       </Stack>
     );
@@ -364,6 +367,26 @@ function StopList({ stops }) {
               />
             </ListItem>
             {index < stops.length - 1 ? <Divider /> : null}
+          </Box>
+        ))}
+      </List>
+    </Paper>
+  );
+}
+
+function LegList({ legs }) {
+  return (
+    <Paper elevation={0} sx={{ border: "1px solid rgba(24,38,31,0.08)" }}>
+      <List disablePadding>
+        {legs.map((leg, index) => (
+          <Box key={`${leg.label}-${index}`}>
+            <ListItem sx={{ py: 2 }}>
+              <ListItemText
+                primary={`${leg.label} · ${leg.start_location} to ${leg.end_location}`}
+                secondary={`${leg.duration_minutes} min · ${leg.distance_miles} miles`}
+              />
+            </ListItem>
+            {index < legs.length - 1 ? <Divider /> : null}
           </Box>
         ))}
       </List>

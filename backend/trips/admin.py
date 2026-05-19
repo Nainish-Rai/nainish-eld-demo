@@ -1,6 +1,18 @@
 from django.contrib import admin
 
-from .models import TripRequest
+from .models import PlaceCache, RouteCache, TripRequest
+
+
+@admin.register(PlaceCache)
+class PlaceCacheAdmin(admin.ModelAdmin):
+    list_display = ("query", "formatted_address", "provider", "updated_at")
+    search_fields = ("query", "formatted_address", "normalized_query")
+
+
+@admin.register(RouteCache)
+class RouteCacheAdmin(admin.ModelAdmin):
+    list_display = ("origin", "destination", "provider", "distance_miles", "duration_minutes", "updated_at")
+    search_fields = ("cache_key", "origin__query", "destination__query")
 
 
 @admin.register(TripRequest)
