@@ -159,7 +159,7 @@ class HosPlannerTests(TestCase):
         )
 
 
-@override_settings(MAPBOX_ACCESS_TOKEN="test-mapbox-token", MAPBOX_GEOCODING_PERMANENT=True)
+@override_settings(GEOAPIFY_API_KEY="test-geoapify-key")
 class RoutingCacheTests(TestCase):
     @patch("trips.routing.requests.get")
     def test_build_live_route_template_populates_place_and_route_cache(self, mock_get):
@@ -175,7 +175,7 @@ class RoutingCacheTests(TestCase):
 
         self.assertEqual(PlaceCache.objects.count(), 3)
         self.assertEqual(RouteCache.objects.count(), 2)
-        self.assertEqual(route_template.provider, "mapbox/driving-traffic")
+        self.assertEqual(route_template.provider, "osrm")
         self.assertEqual(route_template.total_drive_minutes, 5400 // 60 + 27000 // 60)
 
     @patch("trips.routing.requests.get")
@@ -231,15 +231,12 @@ def _mock_response(payload):
 
 def _geocode_result(query: str, formatted_address: str, latitude: str, longitude: str) -> dict:
     return {
-        "features": [
+        "results": [
             {
-                "properties": {
-                    "full_address": formatted_address,
-                    "name": query,
-                },
-                "geometry": {
-                    "coordinates": [longitude, latitude],
-                },
+                "formatted": formatted_address,
+                "name": query,
+                "lat": latitude,
+                "lon": longitude,
             }
         ]
     }
@@ -251,7 +248,6 @@ def _route_result(distance: float, duration: float, coordinates: list[list[float
             {
                 "distance": distance,
                 "duration": duration,
-                "notifications": [],
                 "geometry": {
                     "type": "LineString",
                     "coordinates": coordinates,

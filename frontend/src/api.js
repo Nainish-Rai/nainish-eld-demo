@@ -1,8 +1,5 @@
 export const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api";
-export const mapboxAccessToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN || "";
-export const mapboxTileUrl = mapboxAccessToken
-  ? `https://api.mapbox.com/styles/v1/mapbox/navigation-day-v1/tiles/256/{z}/{x}/{y}?access_token=${mapboxAccessToken}`
-  : "";
+export const geoapifyApiKey = import.meta.env.VITE_GEOAPIFY_API_KEY || "";
 
 export async function createTripPlan(payload) {
   const response = await fetch(`${apiBaseUrl}/trips/plan/`, {
@@ -22,7 +19,7 @@ export async function createTripPlan(payload) {
 }
 
 export async function searchLocationSuggestions(query, { signal } = {}) {
-  if (!mapboxAccessToken) {
+  if (!geoapifyApiKey) {
     return [];
   }
 
@@ -32,31 +29,30 @@ export async function searchLocationSuggestions(query, { signal } = {}) {
   }
 
   const params = new URLSearchParams({
-    access_token: mapboxAccessToken,
-    autocomplete: "true",
-    country: "US",
+    apiKey: geoapifyApiKey,
+    format: "json",
+    filter: "countrycode:us",
     limit: "5",
-    q: cleanedQuery,
-    types: "address,street,place,locality,district,postcode,region",
+    text: cleanedQuery,
   });
 
-  const response = await fetch(`https://api.mapbox.com/search/geocode/v6/forward?${params.toString()}`, { signal });
+  const response = await fetch(`https://api.geoapify.com/v1/geocode/autocomplete?${params.toString()}`, { signal });
   if (!response.ok) {
     throw new Error("Unable to load location suggestions.");
   }
 
   const results = await response.json();
-  const features = results?.features;
+  const features = results?.results;
   if (!Array.isArray(features)) {
     return [];
   }
 
   return features.map((feature) => ({
-    id: feature.properties?.mapbox_id || feature.id,
-    label: feature.properties?.full_address || feature.properties?.name || cleanedQuery,
+    id: feature.place_id || feature.result_type || feature.formatted || cleanedQuery,
+    label: feature.formatted || cleanedQuery,
     shortLabel: formatLocationSuggestion(feature),
-    latitude: feature.geometry?.coordinates?.[1] ?? null,
-    longitude: feature.geometry?.coordinates?.[0] ?? null,
+    latitude: feature.lat ?? null,
+    longitude: feature.lon ?? null,
   }));
 }
 
@@ -82,9 +78,8 @@ function extractErrorMessage(data) {
 }
 
 function formatLocationSuggestion(item) {
-  const properties = item.properties || {};
-  const name = properties.name_preferred || properties.name || properties.full_address || "";
-  const placeFormatted = properties.place_formatted || "";
+  const name = item.address_line1 || item.name || "";
+  const placeFormatted = item.address_line2 || item.formatted || "";
 
-  return [name, placeFormatted].filter(Boolean).join(", ") || properties.full_address || "";
+  return [name, placeFormatted].filter(Boolean).join(", ") || item.formatted || "";
 }

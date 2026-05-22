@@ -36,7 +36,7 @@ import LocalShippingRoundedIcon from "@mui/icons-material/LocalShippingRounded";
 import MyLocationRoundedIcon from "@mui/icons-material/MyLocationRounded";
 import TimerRoundedIcon from "@mui/icons-material/TimerRounded";
 
-import { createTripPlan, mapboxAccessToken, searchLocationSuggestions } from "./api";
+import { createTripPlan, geoapifyApiKey, searchLocationSuggestions } from "./api";
 import { RouteMap } from "./components/RouteMap";
 import { PdfLogPreview } from "./components/PdfLogPreview";
 import { generateTripLogPdf } from "./eldPdf";
@@ -48,9 +48,6 @@ const initialForm = {
   dropoff_location: "",
   departure_at: formatDateTimeLocal(new Date()),
   current_cycle_used_hours: "12.50",
-  truck_height_feet: "",
-  truck_width_feet: "",
-  truck_weight_pounds: "",
 };
 
 const initialSelectedPlaces = {
@@ -107,11 +104,6 @@ const inputSteps = [
 ];
 
 const cycleHourPresets = ["0", "4", "8", "12.5", "20", "34"];
-const truckPresets = [
-  { label: "Dry van", truck_height_feet: "13.5", truck_width_feet: "8.5", truck_weight_pounds: "80000" },
-  { label: "Box truck", truck_height_feet: "12", truck_width_feet: "8", truck_weight_pounds: "26000" },
-  { label: "Sprinter", truck_height_feet: "9", truck_width_feet: "7", truck_weight_pounds: "9500" },
-];
 const requiredFields = inputSteps.map((step) => step.id);
 const recentStorageKey = "spotter_recent_trip_inputs";
 
@@ -183,7 +175,6 @@ function App() {
         departure_at: new Date(formValues.departure_at).toISOString(),
         current_cycle_used_hours: formValues.current_cycle_used_hours,
         ...buildLocationCoordinatePayload(selectedPlaces),
-        ...buildTruckRoutingPayload(formValues),
       };
       const result = await createTripPlan(payload);
       setPlanResult(result);
@@ -202,15 +193,6 @@ function App() {
 
   function updateField(name, value) {
     setFormValues((current) => ({ ...current, [name]: value }));
-  }
-
-  function updateTruckProfile(preset) {
-    setFormValues((current) => ({
-      ...current,
-      truck_height_feet: preset.truck_height_feet,
-      truck_width_feet: preset.truck_width_feet,
-      truck_weight_pounds: preset.truck_weight_pounds,
-    }));
   }
 
   function handleResolvedLocation(fieldName, payload) {
@@ -334,7 +316,6 @@ function App() {
                     onFieldChange={handleFieldChange}
                     onSetField={updateField}
                     onResolvedLocation={handleResolvedLocation}
-                    onTruckPreset={updateTruckProfile}
                     onStepChange={(stepIndex) => {
                       setErrorMessage("");
                       setActiveInputStep(stepIndex);
@@ -356,7 +337,7 @@ function App() {
                       disabled={isSubmitting}
                       sx={{ minHeight: 58, fontSize: "1rem" }}
                     >
-                      {isSubmitting ? "Building safe plan..." : "Build my trip plan"}
+                      {isSubmitting ? "Building trip plan..." : "Build my trip plan"}
                     </Button>
                   ) : (
                     <Button
@@ -455,7 +436,6 @@ function DriverInputFlow({
   onFieldChange,
   onSetField,
   onResolvedLocation,
-  onTruckPreset,
   onStepChange,
   onBack,
   onDeparturePreset,
@@ -473,7 +453,7 @@ function DriverInputFlow({
           <Typography variant="h5">Trip setup</Typography>
         </Stack>
         <Typography variant="body2" color="text.secondary">
-          Start with addresses and clock. Mapbox fills the map search, live traffic travel time, and truck-safe route.
+          Start with stops and clock. Geoapify helps find locations, then Spotter builds the route and HOS plan.
         </Typography>
       </Box>
 
@@ -612,7 +592,6 @@ function DriverInputFlow({
                 items={cycleHourPresets.map((item) => ({ id: item, label: item, shortLabel: item }))}
                 onSelect={(option) => onSetField("current_cycle_used_hours", option.label)}
               />
-              <TruckProfileCard formValues={formValues} onFieldChange={onFieldChange} onTruckPreset={onTruckPreset} />
             </Stack>
           ) : null}
 
@@ -721,13 +700,13 @@ function LocationSuggestField({ name, value, selectedPlace, onChange, placeholde
           required
           fullWidth
           helperText={
-            !mapboxAccessToken
-              ? "Set VITE_MAPBOX_ACCESS_TOKEN to enable live map suggestions."
+            !geoapifyApiKey
+              ? "Set VITE_GEOAPIFY_API_KEY to enable live location suggestions."
               : canSearch && suggestionError
               ? suggestionError
               : selectedPlace
-                ? "Mapbox match selected. Route planning will reuse these coordinates."
-                : "Start typing and choose the closest match."
+                ? "Geoapify match selected. Trip planning will reuse these coordinates."
+                : "Start typing and choose the closest address or place."
           }
           sx={largeFieldStyles}
         />
@@ -789,14 +768,14 @@ function InputOnboardingPanel({ completedStepCount }) {
           </Typography>
           <Typography variant="body2" sx={{ mt: 1.25, color: "rgba(255,250,240,0.72)" }}>
             Drivers should not have to read a dashboard before entering a load. Add the stops, choose a start time,
-            confirm your clock, and add truck limits if you know them. Spotter then builds a traffic-aware route.
+            confirm your clock, and build the route, schedule, and logs after the input is clear.
           </Typography>
         </Box>
 
         <Stack spacing={1.5}>
           {[
-            ["1", "Pick addresses from Mapbox suggestions."],
-            ["2", "Use quick chips for clock hours and truck profile."],
+            ["1", "Pick addresses or places from live suggestions."],
+            ["2", "Use quick chips for start time and cycle hours."],
             ["3", "Build the route, schedule, and logs after input is complete."],
           ].map(([number, text]) => (
             <Stack key={number} direction="row" spacing={1.5} alignItems="center">
@@ -879,68 +858,6 @@ function QuickChipGroup({ label, emptyLabel, items, onSelect }) {
   );
 }
 
-function TruckProfileCard({ formValues, onFieldChange, onTruckPreset }) {
-  return (
-    <Paper
-      elevation={0}
-      sx={{
-        p: 1.5,
-        bgcolor: "rgba(255,255,255,0.72)",
-        border: "1px solid rgba(24,38,31,0.08)",
-      }}
-    >
-      <Stack spacing={1.25}>
-        <Box>
-          <Typography variant="subtitle2">Truck limits</Typography>
-          <Typography variant="caption" color="text.secondary">
-            Optional, but better routes if your truck has height, width, or weight limits.
-          </Typography>
-        </Box>
-        <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-          {truckPresets.map((preset) => (
-            <Chip key={preset.label} label={preset.label} onClick={() => onTruckPreset(preset)} sx={chipButtonStyles} />
-          ))}
-        </Stack>
-        <Grid container spacing={1.25}>
-          <Grid size={{ xs: 12, sm: 4 }}>
-            <TextField
-              label="Height (ft)"
-              name="truck_height_feet"
-              type="number"
-              value={formValues.truck_height_feet}
-              onChange={onFieldChange}
-              inputProps={{ min: 0, max: 32, step: "0.1" }}
-              fullWidth
-            />
-          </Grid>
-          <Grid size={{ xs: 12, sm: 4 }}>
-            <TextField
-              label="Width (ft)"
-              name="truck_width_feet"
-              type="number"
-              value={formValues.truck_width_feet}
-              onChange={onFieldChange}
-              inputProps={{ min: 0, max: 16, step: "0.1" }}
-              fullWidth
-            />
-          </Grid>
-          <Grid size={{ xs: 12, sm: 4 }}>
-            <TextField
-              label="Weight (lb)"
-              name="truck_weight_pounds"
-              type="number"
-              value={formValues.truck_weight_pounds}
-              onChange={onFieldChange}
-              inputProps={{ min: 0, max: 200000, step: "100" }}
-              fullWidth
-            />
-          </Grid>
-        </Grid>
-      </Stack>
-    </Paper>
-  );
-}
-
 function DriverTripSummary({ formValues }) {
   const summaryItems = [
     ["Now", formValues.current_location],
@@ -948,12 +865,6 @@ function DriverTripSummary({ formValues }) {
     ["Dropoff", formValues.dropoff_location],
     ["Start", formatReadableDateTime(formValues.departure_at)],
     ["Used", `${formValues.current_cycle_used_hours || "0"} hrs`],
-    [
-      "Truck",
-      [formValues.truck_height_feet && `${formValues.truck_height_feet} ft H`, formValues.truck_width_feet && `${formValues.truck_width_feet} ft W`, formValues.truck_weight_pounds && `${formValues.truck_weight_pounds} lb`]
-        .filter(Boolean)
-        .join(" / "),
-    ],
   ];
 
   return (
@@ -997,25 +908,9 @@ function ResultPanel({ activeTab, planResult, logPdfBytes }) {
             `Provider: ${plan.route.provider}`,
             `Miles: ${plan.route.distance_miles}`,
             `Drive hours: ${plan.route.drive_hours}`,
-            `Traffic: ${plan.route.traffic_profile || "standard"}`,
           ]}
         />
         <Alert severity="info">{plan.route.notes}</Alert>
-        {plan.route.truck_constraints?.max_height_meters || plan.route.truck_constraints?.max_width_meters || plan.route.truck_constraints?.max_weight_tons ? (
-          <MetricRow
-            title="Truck limits used"
-            items={[
-              plan.route.truck_constraints?.max_height_meters ? `Height: ${plan.route.truck_constraints.max_height_meters} m` : "Height: not set",
-              plan.route.truck_constraints?.max_width_meters ? `Width: ${plan.route.truck_constraints.max_width_meters} m` : "Width: not set",
-              plan.route.truck_constraints?.max_weight_tons ? `Weight: ${plan.route.truck_constraints.max_weight_tons} t` : "Weight: not set",
-            ]}
-          />
-        ) : null}
-        {plan.route.notifications?.map((notification, index) => (
-          <Alert severity="warning" key={`${notification.subtype || notification.reason || "route-note"}-${index}`}>
-            {notification.message}
-          </Alert>
-        ))}
         <LegList legs={plan.route.legs} />
         <StopList stops={plan.stops} />
       </Stack>
@@ -1170,11 +1065,6 @@ function findFirstInvalidStep(values) {
     }
   }
 
-  const truckError = validateTruckProfile(values);
-  if (truckError) {
-    return { index: inputSteps.length - 1, message: truckError };
-  }
-
   return null;
 }
 
@@ -1197,28 +1087,6 @@ function validateStep(step, value) {
 
     if (numericValue < 0 || numericValue > 70) {
       return "Cycle hours must be between 0 and 70.";
-    }
-  }
-
-  return "";
-}
-
-function validateTruckProfile(values) {
-  const truckFields = [
-    ["truck_height_feet", 32, "Height"],
-    ["truck_width_feet", 16, "Width"],
-    ["truck_weight_pounds", 200000, "Weight"],
-  ];
-
-  for (const [fieldName, maxValue, label] of truckFields) {
-    const rawValue = String(values[fieldName] || "").trim();
-    if (!rawValue) {
-      continue;
-    }
-
-    const numericValue = Number(rawValue);
-    if (!Number.isFinite(numericValue) || numericValue < 0 || numericValue > maxValue) {
-      return `${label} looks invalid.`;
     }
   }
 
@@ -1300,29 +1168,6 @@ function buildLocationCoordinatePayload(selectedPlaces) {
     payload[`${fieldName}_longitude`] = point.longitude;
   }
   return payload;
-}
-
-function buildTruckRoutingPayload(formValues) {
-  const payload = {};
-  const heightFeet = Number(formValues.truck_height_feet);
-  const widthFeet = Number(formValues.truck_width_feet);
-  const weightPounds = Number(formValues.truck_weight_pounds);
-
-  if (Number.isFinite(heightFeet) && heightFeet > 0) {
-    payload.truck_height_meters = roundToTwo(heightFeet * 0.3048);
-  }
-  if (Number.isFinite(widthFeet) && widthFeet > 0) {
-    payload.truck_width_meters = roundToTwo(widthFeet * 0.3048);
-  }
-  if (Number.isFinite(weightPounds) && weightPounds > 0) {
-    payload.truck_weight_tons = roundToTwo(weightPounds * 0.00045359237);
-  }
-
-  return payload;
-}
-
-function roundToTwo(value) {
-  return Math.round(value * 100) / 100;
 }
 
 export default App;

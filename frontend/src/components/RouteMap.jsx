@@ -1,8 +1,6 @@
 import { Box, Paper, Typography } from "@mui/material";
 import { CircleMarker, MapContainer, Polyline, Popup, TileLayer } from "react-leaflet";
 
-import { mapboxAccessToken, mapboxTileUrl } from "../api";
-
 export function RouteMap({ geometry, waypoints }) {
   const coordinates = geometry?.coordinates ?? [];
   const path = coordinates.map(([longitude, latitude]) => [latitude, longitude]);
@@ -43,12 +41,8 @@ export function RouteMap({ geometry, waypoints }) {
         style={{ height: "100%", width: "100%" }}
       >
         <TileLayer
-          attribution={
-            mapboxAccessToken
-              ? '&copy; <a href="https://www.mapbox.com/about/maps/">Mapbox</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-              : '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          }
-          url={mapboxTileUrl || "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"}
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         <Polyline positions={path} pathOptions={{ color: "#165d4a", weight: 5, opacity: 0.85 }} />
         {waypoints.map((waypoint) => (
