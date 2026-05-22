@@ -1,7 +1,7 @@
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -159,13 +159,14 @@ class HosPlannerTests(TestCase):
         )
 
 
+@override_settings(MAPBOX_ACCESS_TOKEN="test-mapbox-token", MAPBOX_GEOCODING_PERMANENT=True)
 class RoutingCacheTests(TestCase):
     @patch("trips.routing.requests.get")
     def test_build_live_route_template_populates_place_and_route_cache(self, mock_get):
         mock_get.side_effect = [
-            _mock_response([_geocode_result("Chicago, IL", "Chicago, IL", "41.8781", "-87.6298")]),
-            _mock_response([_geocode_result("Indianapolis, IN", "Indianapolis, IN", "39.7684", "-86.1581")]),
-            _mock_response([_geocode_result("Atlanta, GA", "Atlanta, GA", "33.7490", "-84.3880")]),
+            _mock_response(_geocode_result("Chicago, IL", "Chicago, IL", "41.8781", "-87.6298")),
+            _mock_response(_geocode_result("Indianapolis, IN", "Indianapolis, IN", "39.7684", "-86.1581")),
+            _mock_response(_geocode_result("Atlanta, GA", "Atlanta, GA", "33.7490", "-84.3880")),
             _mock_response(_route_result(193121.0, 5400.0, [[-87.6298, 41.8781], [-86.1581, 39.7684]])),
             _mock_response(_route_result(676000.0, 27000.0, [[-86.1581, 39.7684], [-84.3880, 33.7490]])),
         ]
@@ -174,15 +175,15 @@ class RoutingCacheTests(TestCase):
 
         self.assertEqual(PlaceCache.objects.count(), 3)
         self.assertEqual(RouteCache.objects.count(), 2)
-        self.assertEqual(route_template.provider, "osrm")
+        self.assertEqual(route_template.provider, "mapbox/driving-traffic")
         self.assertEqual(route_template.total_drive_minutes, 5400 // 60 + 27000 // 60)
 
     @patch("trips.routing.requests.get")
     def test_second_route_request_uses_cache(self, mock_get):
         mock_get.side_effect = [
-            _mock_response([_geocode_result("Chicago, IL", "Chicago, IL", "41.8781", "-87.6298")]),
-            _mock_response([_geocode_result("Indianapolis, IN", "Indianapolis, IN", "39.7684", "-86.1581")]),
-            _mock_response([_geocode_result("Atlanta, GA", "Atlanta, GA", "33.7490", "-84.3880")]),
+            _mock_response(_geocode_result("Chicago, IL", "Chicago, IL", "41.8781", "-87.6298")),
+            _mock_response(_geocode_result("Indianapolis, IN", "Indianapolis, IN", "39.7684", "-86.1581")),
+            _mock_response(_geocode_result("Atlanta, GA", "Atlanta, GA", "33.7490", "-84.3880")),
             _mock_response(_route_result(193121.0, 5400.0, [[-87.6298, 41.8781], [-86.1581, 39.7684]])),
             _mock_response(_route_result(676000.0, 27000.0, [[-86.1581, 39.7684], [-84.3880, 33.7490]])),
         ]
@@ -230,10 +231,17 @@ def _mock_response(payload):
 
 def _geocode_result(query: str, formatted_address: str, latitude: str, longitude: str) -> dict:
     return {
-        "display_name": formatted_address,
-        "lat": latitude,
-        "lon": longitude,
-        "name": query,
+        "features": [
+            {
+                "properties": {
+                    "full_address": formatted_address,
+                    "name": query,
+                },
+                "geometry": {
+                    "coordinates": [longitude, latitude],
+                },
+            }
+        ]
     }
 
 
@@ -243,6 +251,7 @@ def _route_result(distance: float, duration: float, coordinates: list[list[float
             {
                 "distance": distance,
                 "duration": duration,
+                "notifications": [],
                 "geometry": {
                     "type": "LineString",
                     "coordinates": coordinates,

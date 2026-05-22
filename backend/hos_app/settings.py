@@ -80,6 +80,5 @@ CORS_ALLOWED_ORIGINS = [
     if origin.strip()
 ]
 
-OSRM_BASE_URL = os.environ.get("OSRM_BASE_URL", "https://router.project-osrm.org")
-GEOCODER_BASE_URL = os.environ.get("GEOCODER_BASE_URL", "https://nominatim.openstreetmap.org")
-GEOCODER_USER_AGENT = os.environ.get("GEOCODER_USER_AGENT", "spotter-ai-hos-planner/1.0")
+MAPBOX_ACCESS_TOKEN = os.environ.get("MAPBOX_ACCESS_TOKEN", "")
+MAPBOX_GEOCODING_PERMANENT = os.environ.get("MAPBOX_GEOCODING_PERMANENT", "0") == "1"

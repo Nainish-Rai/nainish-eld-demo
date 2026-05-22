@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -27,6 +27,9 @@ class TripPlanningInput:
     dropoff_location: str
     departure_at_iso: str
     current_cycle_used_hours: Decimal
+    truck_height_meters: Decimal | None = None
+    truck_width_meters: Decimal | None = None
+    truck_weight_tons: Decimal | None = None
 
 
 @dataclass(frozen=True)
@@ -46,6 +49,9 @@ class RouteTemplate:
     legs: tuple[RouteLeg, ...]
     geometry_coordinates: tuple[tuple[float, float], ...] = ()
     waypoints: tuple[dict, ...] = ()
+    traffic_profile: str = ""
+    truck_constraints: dict = field(default_factory=dict)
+    notifications: tuple[dict, ...] = ()
 
     @property
     def total_distance_miles(self) -> Decimal:
@@ -72,7 +78,7 @@ class DutyEvent:
 
 DEFAULT_ROUTE_TEMPLATE = RouteTemplate(
     provider="static_route_template",
-    notes="Route geometry is still using a static template. The HOS schedule is calculated from live rule logic.",
+    notes="Fallback static route template used because live routing data is unavailable. The HOS schedule is still calculated from live rule logic.",
     legs=(
         RouteLeg(
             label="Drive to pickup",
@@ -145,12 +151,18 @@ class HosPlanBuilder:
                 "dropoff_location": self.trip_input.dropoff_location,
                 "departure_at": self.trip_input.departure_at_iso,
                 "current_cycle_used_hours": _decimal_string(self.trip_input.current_cycle_used_hours),
+                "truck_height_meters": _optional_decimal_string(self.trip_input.truck_height_meters),
+                "truck_width_meters": _optional_decimal_string(self.trip_input.truck_width_meters),
+                "truck_weight_tons": _optional_decimal_string(self.trip_input.truck_weight_tons),
             },
             "route": {
                 "provider": self.route_template.provider,
+                "traffic_profile": self.route_template.traffic_profile,
                 "distance_miles": float(self.route_template.total_distance_miles),
                 "drive_hours": _decimal_string(Decimal(self.route_template.total_drive_minutes) / Decimal("60")),
                 "notes": self.route_template.notes,
+                "truck_constraints": self.route_template.truck_constraints,
+                "notifications": list(self.route_template.notifications),
                 "geometry": {
                     "type": "LineString",
                     "coordinates": [[lon, lat] for lat, lon in self.route_template.geometry_coordinates],
@@ -478,6 +490,13 @@ def _allocate_miles(
 def _decimal_string(value: Decimal) -> str:
     normalized = value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP).normalize()
     return format(normalized, "f")
+
+
+def _optional_decimal_string(value: Decimal | None) -> str | None:
+    if value is None:
+        return None
+
+    return _decimal_string(value)
 
 
 def _parse_departure(departure_at_iso: str) -> datetime:

@@ -11,7 +11,7 @@ from rest_framework.response import Response
 from .eld_renderer import build_trip_pdf
 from .models import TripRequest
 from .planner import TripPlanningInput, build_trip_plan
-from .routing import RoutingServiceError, build_live_route_template
+from .routing import RoutingServiceError, TruckRoutingProfile, build_live_route_template
 from .serializers import TripPlanRequestSerializer, TripRequestSerializer
 
 
@@ -35,6 +35,9 @@ def plan_trip(request):
         dropoff_location=validated["dropoff_location"],
         departure_at_iso=validated["departure_at"].isoformat(),
         current_cycle_used_hours=Decimal(validated["current_cycle_used_hours"]),
+        truck_height_meters=validated.get("truck_height_meters"),
+        truck_width_meters=validated.get("truck_width_meters"),
+        truck_weight_tons=validated.get("truck_weight_tons"),
     )
 
     try:
@@ -42,6 +45,15 @@ def plan_trip(request):
             current_location=trip_input.current_location,
             pickup_location=trip_input.pickup_location,
             dropoff_location=trip_input.dropoff_location,
+            departure_at_iso=trip_input.departure_at_iso,
+            current_location_point=_build_point(validated, "current_location"),
+            pickup_location_point=_build_point(validated, "pickup_location"),
+            dropoff_location_point=_build_point(validated, "dropoff_location"),
+            truck_profile=TruckRoutingProfile(
+                height_meters=trip_input.truck_height_meters,
+                width_meters=trip_input.truck_width_meters,
+                weight_tons=trip_input.truck_weight_tons,
+            ),
         )
     except RoutingServiceError as error:
         return Response({"detail": str(error)}, status=status.HTTP_502_BAD_GATEWAY)
@@ -85,3 +97,12 @@ def trip_pdf(request, trip_id):
         filename=f"trip-{trip_request.id}-eld-logs.pdf",
         content_type="application/pdf",
     )
+
+
+def _build_point(validated: dict, prefix: str) -> tuple[Decimal, Decimal] | None:
+    latitude = validated.get(f"{prefix}_latitude")
+    longitude = validated.get(f"{prefix}_longitude")
+    if latitude is None or longitude is None:
+        return None
+
+    return (Decimal(latitude), Decimal(longitude))

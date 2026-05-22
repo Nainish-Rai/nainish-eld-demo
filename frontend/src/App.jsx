@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useDeferredValue, useEffect, useState } from "react";
 import {
   Alert,
+  Autocomplete,
   Box,
   Button,
   Chip,
@@ -8,6 +9,7 @@ import {
   CssBaseline,
   Divider,
   Grid,
+  LinearProgress,
   List,
   ListItem,
   ListItemText,
@@ -19,43 +21,173 @@ import {
   ThemeProvider,
   Typography,
 } from "@mui/material";
+import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
+import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
+import ArrowForwardRoundedIcon from "@mui/icons-material/ArrowForwardRounded";
+import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
 import PlayArrowRoundedIcon from "@mui/icons-material/PlayArrowRounded";
 import RouteRoundedIcon from "@mui/icons-material/RouteRounded";
 import ScheduleRoundedIcon from "@mui/icons-material/ScheduleRounded";
 import DescriptionRoundedIcon from "@mui/icons-material/DescriptionRounded";
 import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
+import FlagRoundedIcon from "@mui/icons-material/FlagRounded";
+import Inventory2RoundedIcon from "@mui/icons-material/Inventory2Rounded";
+import LocalShippingRoundedIcon from "@mui/icons-material/LocalShippingRounded";
+import MyLocationRoundedIcon from "@mui/icons-material/MyLocationRounded";
+import TimerRoundedIcon from "@mui/icons-material/TimerRounded";
 
-import { createTripPlan, getTripPdfUrl } from "./api";
+import { createTripPlan, mapboxAccessToken, searchLocationSuggestions } from "./api";
 import { RouteMap } from "./components/RouteMap";
+import { PdfLogPreview } from "./components/PdfLogPreview";
+import { generateTripLogPdf } from "./eldPdf";
 import { plannerTheme } from "./theme";
 
 const initialForm = {
   current_location: "",
   pickup_location: "",
   dropoff_location: "",
-  departure_at: "2026-05-19T08:00",
+  departure_at: formatDateTimeLocal(new Date()),
   current_cycle_used_hours: "12.50",
+  truck_height_feet: "",
+  truck_width_feet: "",
+  truck_weight_pounds: "",
 };
+
+const initialSelectedPlaces = {
+  current_location: null,
+  pickup_location: null,
+  dropoff_location: null,
+};
+
+const inputSteps = [
+  {
+    id: "current_location",
+    label: "Current",
+    title: "Where are you now?",
+    helper: "City, truck stop, yard, or full street address.",
+    placeholder: "Example: Chicago, IL",
+    icon: MyLocationRoundedIcon,
+    fieldType: "text",
+  },
+  {
+    id: "pickup_location",
+    label: "Pickup",
+    title: "Where is pickup?",
+    helper: "Use the location the dispatcher gave you.",
+    placeholder: "Example: Indianapolis, IN",
+    icon: Inventory2RoundedIcon,
+    fieldType: "text",
+  },
+  {
+    id: "dropoff_location",
+    label: "Dropoff",
+    title: "Where is delivery?",
+    helper: "City is enough for planning. Full address is better.",
+    placeholder: "Example: Atlanta, GA",
+    icon: FlagRoundedIcon,
+    fieldType: "text",
+  },
+  {
+    id: "departure_at",
+    label: "Start",
+    title: "When do you start?",
+    helper: "Use local time from where you are starting.",
+    icon: AccessTimeRoundedIcon,
+    fieldType: "datetime-local",
+  },
+  {
+    id: "current_cycle_used_hours",
+    label: "Clock",
+    title: "Hours already used?",
+    helper: "Your used hours on the current 70-hour cycle.",
+    placeholder: "Example: 12.5",
+    icon: TimerRoundedIcon,
+    fieldType: "number",
+  },
+];
+
+const cycleHourPresets = ["0", "4", "8", "12.5", "20", "34"];
+const truckPresets = [
+  { label: "Dry van", truck_height_feet: "13.5", truck_width_feet: "8.5", truck_weight_pounds: "80000" },
+  { label: "Box truck", truck_height_feet: "12", truck_width_feet: "8", truck_weight_pounds: "26000" },
+  { label: "Sprinter", truck_height_feet: "9", truck_width_feet: "7", truck_weight_pounds: "9500" },
+];
+const requiredFields = inputSteps.map((step) => step.id);
+const recentStorageKey = "spotter_recent_trip_inputs";
 
 function App() {
   const [formValues, setFormValues] = useState(initialForm);
+  const [selectedPlaces, setSelectedPlaces] = useState(initialSelectedPlaces);
+  const [activeInputStep, setActiveInputStep] = useState(0);
+  const [recentLocations, setRecentLocations] = useState(readRecentLocations);
   const [activeTab, setActiveTab] = useState("schedule");
   const [planResult, setPlanResult] = useState(null);
+  const [logPdfBytes, setLogPdfBytes] = useState(null);
+  const [logPdfUrl, setLogPdfUrl] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!planResult) {
+      return undefined;
+    }
+
+    let isCancelled = false;
+    let objectUrl = "";
+
+    async function buildLogPdf() {
+      const bytes = await generateTripLogPdf(planResult);
+      if (isCancelled) {
+        return;
+      }
+
+      objectUrl = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
+      setLogPdfBytes(bytes);
+      setLogPdfUrl(objectUrl);
+    }
+
+    buildLogPdf().catch((error) => {
+      if (!isCancelled) {
+        setErrorMessage(error instanceof Error ? error.message : "Unable to generate PDF logs.");
+      }
+    });
+
+    return () => {
+      isCancelled = true;
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [planResult]);
 
   async function handleSubmit(event) {
     event.preventDefault();
     setErrorMessage("");
+
+    const invalidStep = findFirstInvalidStep(formValues);
+    if (invalidStep) {
+      setActiveInputStep(invalidStep.index);
+      setErrorMessage(invalidStep.message);
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
+      setLogPdfBytes(null);
+      setLogPdfUrl("");
       const payload = {
-        ...formValues,
+        current_location: formValues.current_location,
+        pickup_location: formValues.pickup_location,
+        dropoff_location: formValues.dropoff_location,
         departure_at: new Date(formValues.departure_at).toISOString(),
+        current_cycle_used_hours: formValues.current_cycle_used_hours,
+        ...buildLocationCoordinatePayload(selectedPlaces),
+        ...buildTruckRoutingPayload(formValues),
       };
       const result = await createTripPlan(payload);
       setPlanResult(result);
+      persistRecentLocations(formValues, recentLocations, setRecentLocations);
     } catch (error) {
       setErrorMessage(error.message);
     } finally {
@@ -67,6 +199,62 @@ function App() {
     const { name, value } = event.target;
     setFormValues((current) => ({ ...current, [name]: value }));
   }
+
+  function updateField(name, value) {
+    setFormValues((current) => ({ ...current, [name]: value }));
+  }
+
+  function updateTruckProfile(preset) {
+    setFormValues((current) => ({
+      ...current,
+      truck_height_feet: preset.truck_height_feet,
+      truck_width_feet: preset.truck_width_feet,
+      truck_weight_pounds: preset.truck_weight_pounds,
+    }));
+  }
+
+  function handleResolvedLocation(fieldName, payload) {
+    updateField(fieldName, payload.text);
+    setSelectedPlaces((current) => ({
+      ...current,
+      [fieldName]: payload.point,
+    }));
+  }
+
+  function goToNextStep() {
+    const currentStep = inputSteps[activeInputStep];
+    const error = validateStep(currentStep, formValues[currentStep.id]);
+
+    if (error) {
+      setErrorMessage(error);
+      return;
+    }
+
+    setErrorMessage("");
+    setActiveInputStep((current) => Math.min(current + 1, inputSteps.length - 1));
+  }
+
+  function goToPreviousStep() {
+    setErrorMessage("");
+    setActiveInputStep((current) => Math.max(current - 1, 0));
+  }
+
+  function applyDeparturePreset(preset) {
+    const now = new Date();
+    if (preset === "now") {
+      updateField("departure_at", formatDateTimeLocal(now));
+      return;
+    }
+
+    const tomorrowMorning = new Date(now);
+    tomorrowMorning.setDate(tomorrowMorning.getDate() + 1);
+    tomorrowMorning.setHours(8, 0, 0, 0);
+    updateField("departure_at", formatDateTimeLocal(tomorrowMorning));
+  }
+
+  const completedStepCount = requiredFields.filter((field) => String(formValues[field]).trim()).length;
+  const isFinalInputStep = activeInputStep === inputSteps.length - 1;
+  const hasPlan = Boolean(planResult);
 
   return (
     <ThemeProvider theme={plannerTheme}>
@@ -93,11 +281,14 @@ function App() {
             sx={{ mb: 4 }}
           >
             <Box>
-              <Typography variant="overline" sx={{ letterSpacing: 1.6 }}>
-                FMCSA HOS Planner
+              <Typography variant="overline" sx={{ letterSpacing: 1.8 }}>
+                Driver trip planner
               </Typography>
               <Typography variant="h3" sx={{ mt: 1, maxWidth: 720 }}>
-                Plan the trip, inspect the legal timeline, and generate the driver log.
+                Get a legal trip plan without fighting a dispatch form.
+              </Typography>
+              <Typography variant="body1" color="text.secondary" sx={{ mt: 1.5, maxWidth: 640 }}>
+                Answer one thing at a time. Spotter turns it into a route, HOS timeline, and driver log.
               </Typography>
             </Box>
             <Paper
@@ -110,101 +301,87 @@ function App() {
               }}
             >
               <Typography variant="body2" color="text.secondary">
-                Implementation status
+                Driver mode
               </Typography>
               <Typography variant="h6" sx={{ mt: 0.5 }}>
-                HOS engine live
+                {completedStepCount} of {inputSteps.length} inputs ready
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                The schedule is rule-driven now. Route geometry is still using a static template until OSRM is wired.
+                Short steps, large tap targets, recent stops, and quick presets for common answers.
               </Typography>
             </Paper>
           </Stack>
 
           <Grid container spacing={3}>
-            <Grid size={{ xs: 12, lg: 4 }}>
+            <Grid size={{ xs: 12, lg: hasPlan ? 4 : 8 }}>
               <Paper
                 component="form"
                 onSubmit={handleSubmit}
                 elevation={0}
                 sx={{
-                  p: 3,
+                  p: { xs: 2, sm: 3 },
                   height: "100%",
                   bgcolor: "background.paper",
                   border: "1px solid rgba(24,38,31,0.08)",
                 }}
               >
                 <Stack spacing={2.5}>
-                  <Box>
-                    <Typography variant="h5">Trip inputs</Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      This screen submits a real request to Django, saves the trip in Postgres, and renders live HOS output.
-                    </Typography>
-                  </Box>
-
-                  <TextField
-                    label="Current location"
-                    name="current_location"
-                    value={formValues.current_location}
-                    onChange={handleFieldChange}
-                    required
-                    fullWidth
-                  />
-                  <TextField
-                    label="Pickup location"
-                    name="pickup_location"
-                    value={formValues.pickup_location}
-                    onChange={handleFieldChange}
-                    required
-                    fullWidth
-                  />
-                  <TextField
-                    label="Dropoff location"
-                    name="dropoff_location"
-                    value={formValues.dropoff_location}
-                    onChange={handleFieldChange}
-                    required
-                    fullWidth
-                  />
-                  <TextField
-                    label="Departure time"
-                    name="departure_at"
-                    type="datetime-local"
-                    value={formValues.departure_at}
-                    onChange={handleFieldChange}
-                    required
-                    InputLabelProps={{ shrink: true }}
-                    fullWidth
-                  />
-                  <TextField
-                    label="Current cycle used hours"
-                    name="current_cycle_used_hours"
-                    type="number"
-                    value={formValues.current_cycle_used_hours}
-                    onChange={handleFieldChange}
-                    inputProps={{ min: 0, max: 70, step: "0.25" }}
-                    required
-                    fullWidth
+                  <DriverInputFlow
+                    activeStep={activeInputStep}
+                    formValues={formValues}
+                    selectedPlaces={selectedPlaces}
+                    recentLocations={recentLocations}
+                    onFieldChange={handleFieldChange}
+                    onSetField={updateField}
+                    onResolvedLocation={handleResolvedLocation}
+                    onTruckPreset={updateTruckProfile}
+                    onStepChange={(stepIndex) => {
+                      setErrorMessage("");
+                      setActiveInputStep(stepIndex);
+                    }}
+                    onBack={goToPreviousStep}
+                    onDeparturePreset={applyDeparturePreset}
                   />
 
                   {errorMessage ? <Alert severity="error">{errorMessage}</Alert> : null}
 
-                  <Button
-                    type="submit"
-                    variant="contained"
-                    size="large"
-                    startIcon={
-                      isSubmitting ? <CircularProgress color="inherit" size={18} /> : <PlayArrowRoundedIcon />
-                    }
-                    disabled={isSubmitting}
-                  >
-                    {isSubmitting ? "Generating plan..." : "Generate trip plan"}
-                  </Button>
+                  {isFinalInputStep ? (
+                    <Button
+                      type="submit"
+                      variant="contained"
+                      size="large"
+                      startIcon={
+                        isSubmitting ? <CircularProgress color="inherit" size={18} /> : <PlayArrowRoundedIcon />
+                      }
+                      disabled={isSubmitting}
+                      sx={{ minHeight: 58, fontSize: "1rem" }}
+                    >
+                      {isSubmitting ? "Building safe plan..." : "Build my trip plan"}
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="contained"
+                      size="large"
+                      endIcon={<ArrowForwardRoundedIcon />}
+                      onClick={goToNextStep}
+                      sx={{ minHeight: 58, fontSize: "1rem" }}
+                    >
+                      Next
+                    </Button>
+                  )}
                 </Stack>
               </Paper>
             </Grid>
 
-            <Grid size={{ xs: 12, lg: 8 }}>
+            {!hasPlan ? (
+              <Grid size={{ xs: 12, lg: 4 }}>
+                <InputOnboardingPanel completedStepCount={completedStepCount} />
+              </Grid>
+            ) : null}
+
+            {hasPlan ? (
+              <Grid size={{ xs: 12, lg: 8 }}>
               <Paper
                 elevation={0}
                 sx={{
@@ -235,11 +412,11 @@ function App() {
                         <Chip label={`Trip ${planResult.trip_id.slice(0, 8)}`} color="secondary" />
                         <Button
                           component="a"
-                          href={getTripPdfUrl(planResult.trip_id)}
-                          target="_blank"
-                          rel="noreferrer"
+                          href={logPdfUrl || undefined}
+                          download={`eld-trip-${planResult.trip_id.slice(0, 8)}.pdf`}
                           variant="outlined"
                           startIcon={<DownloadRoundedIcon />}
+                          disabled={!logPdfUrl}
                         >
                           PDF
                         </Button>
@@ -258,14 +435,11 @@ function App() {
                     <Tab icon={<DescriptionRoundedIcon />} iconPosition="start" value="logs" label="Logs" />
                   </Tabs>
 
-                  {!planResult ? (
-                    <EmptyState />
-                  ) : (
-                    <ResultPanel activeTab={activeTab} planResult={planResult} />
-                  )}
+                  <ResultPanel activeTab={activeTab} planResult={planResult} logPdfBytes={logPdfBytes} />
                 </Stack>
               </Paper>
-            </Grid>
+              </Grid>
+            ) : null}
           </Grid>
         </Box>
       </Box>
@@ -273,30 +447,544 @@ function App() {
   );
 }
 
-function EmptyState() {
+function DriverInputFlow({
+  activeStep,
+  formValues,
+  selectedPlaces,
+  recentLocations,
+  onFieldChange,
+  onSetField,
+  onResolvedLocation,
+  onTruckPreset,
+  onStepChange,
+  onBack,
+  onDeparturePreset,
+}) {
+  const step = inputSteps[activeStep];
+  const StepIcon = step.icon;
+  const progressValue = ((activeStep + 1) / inputSteps.length) * 100;
+  const isLocationStep = ["current_location", "pickup_location", "dropoff_location"].includes(step.id);
+
+  return (
+    <Stack spacing={2.5}>
+      <Box>
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
+          <LocalShippingRoundedIcon color="primary" />
+          <Typography variant="h5">Trip setup</Typography>
+        </Stack>
+        <Typography variant="body2" color="text.secondary">
+          Start with addresses and clock. Mapbox fills the map search, live traffic travel time, and truck-safe route.
+        </Typography>
+      </Box>
+
+      <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+        {inputSteps.map((item, index) => {
+          const isComplete = Boolean(String(formValues[item.id]).trim());
+          const ItemIcon = item.icon;
+
+          return (
+            <Button
+              key={item.id}
+              type="button"
+              variant={index === activeStep ? "contained" : "outlined"}
+              color={isComplete && index !== activeStep ? "success" : "primary"}
+              startIcon={isComplete && index !== activeStep ? <CheckCircleRoundedIcon /> : <ItemIcon />}
+              onClick={() => onStepChange(index)}
+              sx={{
+                minHeight: 44,
+                borderRadius: 999,
+                px: 1.6,
+                flex: { xs: "1 1 46%", sm: "0 0 auto" },
+              }}
+            >
+              {item.label}
+            </Button>
+          );
+        })}
+      </Stack>
+
+      <Box>
+        <Stack direction="row" justifyContent="space-between" sx={{ mb: 0.8 }}>
+          <Typography variant="caption" color="text.secondary">
+            Step {activeStep + 1} of {inputSteps.length}
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            {Math.round(progressValue)}%
+          </Typography>
+        </Stack>
+        <LinearProgress variant="determinate" value={progressValue} sx={{ height: 8, borderRadius: 99 }} />
+      </Box>
+
+      <Paper
+        elevation={0}
+        sx={{
+          p: { xs: 2, sm: 2.5 },
+          bgcolor: "#f8f3e8",
+          border: "1px solid rgba(24,38,31,0.08)",
+        }}
+      >
+        <Stack spacing={2}>
+          <Stack direction="row" spacing={1.5} alignItems="flex-start">
+            <Box
+              sx={{
+                width: 48,
+                height: 48,
+                display: "grid",
+                placeItems: "center",
+                flex: "0 0 auto",
+                borderRadius: "16px",
+                bgcolor: "rgba(22,93,74,0.12)",
+                color: "primary.main",
+              }}
+            >
+              <StepIcon />
+            </Box>
+            <Box>
+              <Typography variant="h4" sx={{ fontSize: { xs: "1.7rem", sm: "2rem" } }}>
+                {step.title}
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                {step.helper}
+              </Typography>
+            </Box>
+          </Stack>
+
+          {isLocationStep ? (
+            <Stack spacing={1.25}>
+              <LocationSuggestField
+                name={step.id}
+                value={formValues[step.id]}
+                selectedPlace={selectedPlaces[step.id]}
+                onChange={(payload) => onResolvedLocation(step.id, payload)}
+                placeholder={step.placeholder}
+              />
+              <QuickChipGroup
+                label="Recent stops"
+                emptyLabel="Recent stops appear after your first plan."
+                items={recentLocations.map((item) => ({ id: item, label: item, shortLabel: item }))}
+                onSelect={(option) => onResolvedLocation(step.id, { text: option.label, point: null })}
+              />
+            </Stack>
+          ) : null}
+
+          {step.id === "departure_at" ? (
+            <Stack spacing={1.25}>
+              <TextField
+                label="Start time"
+                name="departure_at"
+                type="datetime-local"
+                value={formValues.departure_at}
+                onChange={onFieldChange}
+                required
+                InputLabelProps={{ shrink: true }}
+                fullWidth
+                sx={largeFieldStyles}
+              />
+              <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                <Chip label="Leave now" color="primary" onClick={() => onDeparturePreset("now")} sx={chipButtonStyles} />
+                <Chip
+                  label="Tomorrow 8 AM"
+                  color="primary"
+                  variant="outlined"
+                  onClick={() => onDeparturePreset("tomorrow-morning")}
+                  sx={chipButtonStyles}
+                />
+              </Stack>
+            </Stack>
+          ) : null}
+
+          {step.id === "current_cycle_used_hours" ? (
+            <Stack spacing={1.25}>
+              <TextField
+                label="Used cycle hours"
+                name="current_cycle_used_hours"
+                type="number"
+                value={formValues.current_cycle_used_hours}
+                onChange={onFieldChange}
+                placeholder={step.placeholder}
+                inputProps={{ min: 0, max: 70, step: "0.25" }}
+                required
+                fullWidth
+                sx={largeFieldStyles}
+              />
+              <QuickChipGroup
+                label="Common answers"
+                items={cycleHourPresets.map((item) => ({ id: item, label: item, shortLabel: item }))}
+                onSelect={(option) => onSetField("current_cycle_used_hours", option.label)}
+              />
+              <TruckProfileCard formValues={formValues} onFieldChange={onFieldChange} onTruckPreset={onTruckPreset} />
+            </Stack>
+          ) : null}
+
+          <DriverTripSummary formValues={formValues} />
+        </Stack>
+      </Paper>
+
+      <Stack direction="row" spacing={1.25}>
+        <Button
+          type="button"
+          variant="outlined"
+          startIcon={<ArrowBackRoundedIcon />}
+          onClick={onBack}
+          disabled={activeStep === 0}
+          sx={{ minHeight: 52, width: "100%" }}
+        >
+          Back
+        </Button>
+      </Stack>
+    </Stack>
+  );
+}
+
+function LocationSuggestField({ name, value, selectedPlace, onChange, placeholder }) {
+  const deferredValue = useDeferredValue(value);
+  const [suggestions, setSuggestions] = useState([]);
+  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
+  const [suggestionError, setSuggestionError] = useState("");
+  const canSearch = String(value || "").trim().length >= 3;
+
+  useEffect(() => {
+    const query = String(deferredValue || "").trim();
+    if (query.length < 3) {
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => {
+      setIsLoadingSuggestions(true);
+      searchLocationSuggestions(query, { signal: controller.signal })
+        .then((results) => {
+          setSuggestions(results);
+          setSuggestionError("");
+        })
+        .catch((error) => {
+          if (error.name !== "AbortError") {
+            setSuggestions([]);
+            setSuggestionError("Suggestions unavailable. You can still type the address.");
+          }
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) {
+            setIsLoadingSuggestions(false);
+          }
+        });
+    }, 250);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [deferredValue]);
+
+  return (
+    <Autocomplete
+      freeSolo
+      filterOptions={(options) => options}
+      getOptionLabel={(option) => (typeof option === "string" ? option : option.label)}
+      inputValue={value}
+      loading={canSearch && isLoadingSuggestions}
+      loadingText="Searching map..."
+      noOptionsText={String(value || "").trim().length < 3 ? "Type at least 3 letters" : "No matches found"}
+      options={canSearch ? suggestions : []}
+      onChange={(_, selectedValue) => {
+        if (!selectedValue) {
+          return;
+        }
+
+        if (typeof selectedValue === "string") {
+          onChange({ text: selectedValue, point: null });
+          return;
+        }
+
+        onChange({
+          text: selectedValue.label,
+          point:
+            selectedValue.latitude != null && selectedValue.longitude != null
+              ? {
+                  latitude: selectedValue.latitude,
+                  longitude: selectedValue.longitude,
+                }
+              : null,
+        });
+      }}
+      onInputChange={(_, nextValue, reason) => {
+        if (reason !== "reset") {
+          onChange({ text: nextValue, point: null });
+        }
+      }}
+      renderInput={(params) => (
+        <TextField
+          {...params}
+          label="Location"
+          name={name}
+          placeholder={placeholder}
+          required
+          fullWidth
+          helperText={
+            !mapboxAccessToken
+              ? "Set VITE_MAPBOX_ACCESS_TOKEN to enable live map suggestions."
+              : canSearch && suggestionError
+              ? suggestionError
+              : selectedPlace
+                ? "Mapbox match selected. Route planning will reuse these coordinates."
+                : "Start typing and choose the closest match."
+          }
+          sx={largeFieldStyles}
+        />
+      )}
+      renderOption={(props, option) => {
+        const { key, ...optionProps } = props;
+
+        return (
+          <Box component="li" key={key} {...optionProps} sx={{ py: 1.25 }}>
+            <ListItemText
+              primary={option.shortLabel}
+              secondary={option.label}
+              primaryTypographyProps={{ fontWeight: 800 }}
+              secondaryTypographyProps={{ noWrap: true }}
+            />
+          </Box>
+        );
+      }}
+      selectOnFocus
+    />
+  );
+}
+
+function InputOnboardingPanel({ completedStepCount }) {
   return (
     <Paper
       elevation={0}
       sx={{
-        p: 4,
-        minHeight: 420,
-        display: "grid",
-        placeItems: "center",
-        bgcolor: "#f8f3e8",
-        border: "1px dashed rgba(24,38,31,0.16)",
+        p: { xs: 2.5, md: 3 },
+        height: "100%",
+        minHeight: { lg: 560 },
+        display: "flex",
+        alignItems: "stretch",
+        bgcolor: "#17271f",
+        color: "#fffaf0",
+        border: "1px solid rgba(24,38,31,0.08)",
+        overflow: "hidden",
+        position: "relative",
       }}
     >
-      <Stack spacing={1.5} alignItems="center" sx={{ maxWidth: 420, textAlign: "center" }}>
-        <Typography variant="h6">No trip generated yet</Typography>
-        <Typography variant="body2" color="text.secondary">
-          Submit the form to verify the full path from MUI through DRF into Postgres.
-        </Typography>
+      <Box
+        sx={{
+          position: "absolute",
+          width: 280,
+          height: 280,
+          right: -110,
+          top: -80,
+          borderRadius: "50%",
+          bgcolor: "rgba(178,92,47,0.34)",
+        }}
+      />
+      <Stack spacing={3} sx={{ position: "relative", width: "100%" }}>
+        <Box>
+          <Typography variant="overline" sx={{ color: "rgba(255,250,240,0.7)", letterSpacing: 1.4 }}>
+            How this works
+          </Typography>
+          <Typography variant="h4" sx={{ mt: 1 }}>
+            Start with the trip. Results come after.
+          </Typography>
+          <Typography variant="body2" sx={{ mt: 1.25, color: "rgba(255,250,240,0.72)" }}>
+            Drivers should not have to read a dashboard before entering a load. Add the stops, choose a start time,
+            confirm your clock, and add truck limits if you know them. Spotter then builds a traffic-aware route.
+          </Typography>
+        </Box>
+
+        <Stack spacing={1.5}>
+          {[
+            ["1", "Pick addresses from Mapbox suggestions."],
+            ["2", "Use quick chips for clock hours and truck profile."],
+            ["3", "Build the route, schedule, and logs after input is complete."],
+          ].map(([number, text]) => (
+            <Stack key={number} direction="row" spacing={1.5} alignItems="center">
+              <Box
+                sx={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: "50%",
+                  bgcolor: "rgba(255,250,240,0.12)",
+                  display: "grid",
+                  placeItems: "center",
+                  flex: "0 0 auto",
+                  fontWeight: 800,
+                }}
+              >
+                {number}
+              </Box>
+              <Typography variant="body2" sx={{ color: "rgba(255,250,240,0.84)" }}>
+                {text}
+              </Typography>
+            </Stack>
+          ))}
+        </Stack>
+
+        <Paper
+          elevation={0}
+          sx={{
+            mt: "auto",
+            p: 2,
+            bgcolor: "rgba(255,250,240,0.1)",
+            border: "1px solid rgba(255,250,240,0.14)",
+            color: "inherit",
+          }}
+        >
+          <Typography variant="body2" sx={{ color: "rgba(255,250,240,0.7)" }}>
+            Setup progress
+          </Typography>
+          <Typography variant="h5" sx={{ mt: 0.5 }}>
+            {completedStepCount} of {inputSteps.length} ready
+          </Typography>
+          <LinearProgress
+            variant="determinate"
+            value={(completedStepCount / inputSteps.length) * 100}
+            sx={{
+              mt: 1.5,
+              height: 8,
+              borderRadius: 99,
+              bgcolor: "rgba(255,250,240,0.18)",
+              "& .MuiLinearProgress-bar": {
+                bgcolor: "#f0b35d",
+              },
+            }}
+          />
+        </Paper>
       </Stack>
     </Paper>
   );
 }
 
-function ResultPanel({ activeTab, planResult }) {
+function QuickChipGroup({ label, emptyLabel, items, onSelect }) {
+  if (!items.length) {
+    return (
+      <Typography variant="caption" color="text.secondary">
+        {emptyLabel}
+      </Typography>
+    );
+  }
+
+  return (
+    <Box>
+      <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.8 }}>
+        {label}
+      </Typography>
+      <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+        {items.map((item) => (
+          <Chip key={item.id || item.label} label={item.shortLabel || item.label} onClick={() => onSelect(item)} sx={chipButtonStyles} />
+        ))}
+      </Stack>
+    </Box>
+  );
+}
+
+function TruckProfileCard({ formValues, onFieldChange, onTruckPreset }) {
+  return (
+    <Paper
+      elevation={0}
+      sx={{
+        p: 1.5,
+        bgcolor: "rgba(255,255,255,0.72)",
+        border: "1px solid rgba(24,38,31,0.08)",
+      }}
+    >
+      <Stack spacing={1.25}>
+        <Box>
+          <Typography variant="subtitle2">Truck limits</Typography>
+          <Typography variant="caption" color="text.secondary">
+            Optional, but better routes if your truck has height, width, or weight limits.
+          </Typography>
+        </Box>
+        <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+          {truckPresets.map((preset) => (
+            <Chip key={preset.label} label={preset.label} onClick={() => onTruckPreset(preset)} sx={chipButtonStyles} />
+          ))}
+        </Stack>
+        <Grid container spacing={1.25}>
+          <Grid size={{ xs: 12, sm: 4 }}>
+            <TextField
+              label="Height (ft)"
+              name="truck_height_feet"
+              type="number"
+              value={formValues.truck_height_feet}
+              onChange={onFieldChange}
+              inputProps={{ min: 0, max: 32, step: "0.1" }}
+              fullWidth
+            />
+          </Grid>
+          <Grid size={{ xs: 12, sm: 4 }}>
+            <TextField
+              label="Width (ft)"
+              name="truck_width_feet"
+              type="number"
+              value={formValues.truck_width_feet}
+              onChange={onFieldChange}
+              inputProps={{ min: 0, max: 16, step: "0.1" }}
+              fullWidth
+            />
+          </Grid>
+          <Grid size={{ xs: 12, sm: 4 }}>
+            <TextField
+              label="Weight (lb)"
+              name="truck_weight_pounds"
+              type="number"
+              value={formValues.truck_weight_pounds}
+              onChange={onFieldChange}
+              inputProps={{ min: 0, max: 200000, step: "100" }}
+              fullWidth
+            />
+          </Grid>
+        </Grid>
+      </Stack>
+    </Paper>
+  );
+}
+
+function DriverTripSummary({ formValues }) {
+  const summaryItems = [
+    ["Now", formValues.current_location],
+    ["Pickup", formValues.pickup_location],
+    ["Dropoff", formValues.dropoff_location],
+    ["Start", formatReadableDateTime(formValues.departure_at)],
+    ["Used", `${formValues.current_cycle_used_hours || "0"} hrs`],
+    [
+      "Truck",
+      [formValues.truck_height_feet && `${formValues.truck_height_feet} ft H`, formValues.truck_width_feet && `${formValues.truck_width_feet} ft W`, formValues.truck_weight_pounds && `${formValues.truck_weight_pounds} lb`]
+        .filter(Boolean)
+        .join(" / "),
+    ],
+  ];
+
+  return (
+    <Paper
+      elevation={0}
+      sx={{
+        p: 1.5,
+        bgcolor: "rgba(255,255,255,0.72)",
+        border: "1px solid rgba(24,38,31,0.08)",
+      }}
+    >
+      <Typography variant="subtitle2" sx={{ mb: 1 }}>
+        Your trip so far
+      </Typography>
+      <Stack spacing={0.75}>
+        {summaryItems.map(([label, value]) => (
+          <Stack key={label} direction="row" spacing={1} justifyContent="space-between">
+            <Typography variant="caption" color="text.secondary">
+              {label}
+            </Typography>
+            <Typography variant="caption" sx={{ maxWidth: "68%", textAlign: "right", fontWeight: 700 }}>
+              {value || "Not set"}
+            </Typography>
+          </Stack>
+        ))}
+      </Stack>
+    </Paper>
+  );
+}
+
+function ResultPanel({ activeTab, planResult, logPdfBytes }) {
   const plan = planResult.plan;
 
   if (activeTab === "route") {
@@ -309,9 +997,25 @@ function ResultPanel({ activeTab, planResult }) {
             `Provider: ${plan.route.provider}`,
             `Miles: ${plan.route.distance_miles}`,
             `Drive hours: ${plan.route.drive_hours}`,
+            `Traffic: ${plan.route.traffic_profile || "standard"}`,
           ]}
         />
         <Alert severity="info">{plan.route.notes}</Alert>
+        {plan.route.truck_constraints?.max_height_meters || plan.route.truck_constraints?.max_width_meters || plan.route.truck_constraints?.max_weight_tons ? (
+          <MetricRow
+            title="Truck limits used"
+            items={[
+              plan.route.truck_constraints?.max_height_meters ? `Height: ${plan.route.truck_constraints.max_height_meters} m` : "Height: not set",
+              plan.route.truck_constraints?.max_width_meters ? `Width: ${plan.route.truck_constraints.max_width_meters} m` : "Width: not set",
+              plan.route.truck_constraints?.max_weight_tons ? `Weight: ${plan.route.truck_constraints.max_weight_tons} t` : "Weight: not set",
+            ]}
+          />
+        ) : null}
+        {plan.route.notifications?.map((notification, index) => (
+          <Alert severity="warning" key={`${notification.subtype || notification.reason || "route-note"}-${index}`}>
+            {notification.message}
+          </Alert>
+        ))}
         <LegList legs={plan.route.legs} />
         <StopList stops={plan.stops} />
       </Stack>
@@ -321,47 +1025,25 @@ function ResultPanel({ activeTab, planResult }) {
   if (activeTab === "logs") {
     return (
       <Stack spacing={2}>
-        {plan.daily_logs.map((dailyLog) => (
-          <Paper
-            key={dailyLog.date}
-            elevation={0}
-            sx={{ p: 2, border: "1px solid rgba(24,38,31,0.08)", bgcolor: "#fffdf8" }}
-          >
-            <Stack spacing={2}>
-              <MetricRow
-                title={`Daily log · ${dailyLog.date}`}
-                items={[
-                  `Driving: ${dailyLog.totals_minutes.driving} min`,
-                  `On duty: ${dailyLog.totals_minutes.on_duty} min`,
-                  `Sleeper: ${dailyLog.totals_minutes.sleeper_berth} min`,
-                  `Off duty: ${dailyLog.totals_minutes.off_duty} min`,
-                ]}
-              />
-              <Alert severity="info">{dailyLog.notes}</Alert>
-              <Paper
-                elevation={0}
-                sx={{
-                  overflow: "auto",
-                  border: "1px solid rgba(24,38,31,0.08)",
-                  bgcolor: "#ffffff",
-                  maxWidth: "100%",
-                }}
-              >
-                <Box
-                  sx={{
-                    width: "100%",
-                    "& svg": {
-                      display: "block",
-                      width: "100%",
-                      height: "auto",
-                    },
-                  }}
-                  dangerouslySetInnerHTML={{ __html: dailyLog.sheet_svg }}
-                />
-              </Paper>
-            </Stack>
-          </Paper>
-        ))}
+        <MetricRow
+          title="Daily log sheets"
+          items={[
+            `${plan.daily_logs.length} sheet${plan.daily_logs.length === 1 ? "" : "s"}`,
+            `PDF preview: ${logPdfBytes ? "Ready" : "Generating"}`,
+          ]}
+        />
+        <Paper
+          elevation={0}
+          sx={{
+            p: { xs: 1.5, md: 2 },
+            overflow: "auto",
+            border: "1px solid rgba(24,38,31,0.08)",
+            bgcolor: "#f5f2ea",
+            maxHeight: "76vh",
+          }}
+        >
+          <PdfLogPreview pdfBytes={logPdfBytes} />
+        </Paper>
       </Stack>
     );
   }
@@ -458,6 +1140,189 @@ function DutyEventList({ events }) {
       </List>
     </Paper>
   );
+}
+
+const largeFieldStyles = {
+  "& .MuiInputBase-root": {
+    minHeight: 60,
+    fontSize: "1.05rem",
+  },
+  "& .MuiInputLabel-root": {
+    fontSize: "1rem",
+  },
+};
+
+const chipButtonStyles = {
+  minHeight: 44,
+  borderRadius: 999,
+  fontWeight: 700,
+  "& .MuiChip-label": {
+    px: 1.4,
+  },
+};
+
+function findFirstInvalidStep(values) {
+  for (let index = 0; index < inputSteps.length; index += 1) {
+    const step = inputSteps[index];
+    const message = validateStep(step, values[step.id]);
+    if (message) {
+      return { index, message };
+    }
+  }
+
+  const truckError = validateTruckProfile(values);
+  if (truckError) {
+    return { index: inputSteps.length - 1, message: truckError };
+  }
+
+  return null;
+}
+
+function validateStep(step, value) {
+  const normalizedValue = String(value || "").trim();
+
+  if (!normalizedValue) {
+    return `${step.title} Add this before building the trip plan.`;
+  }
+
+  if (step.id === "departure_at" && Number.isNaN(new Date(value).getTime())) {
+    return "Pick a valid start time.";
+  }
+
+  if (step.id === "current_cycle_used_hours") {
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) {
+      return "Enter cycle hours as a number.";
+    }
+
+    if (numericValue < 0 || numericValue > 70) {
+      return "Cycle hours must be between 0 and 70.";
+    }
+  }
+
+  return "";
+}
+
+function validateTruckProfile(values) {
+  const truckFields = [
+    ["truck_height_feet", 32, "Height"],
+    ["truck_width_feet", 16, "Width"],
+    ["truck_weight_pounds", 200000, "Weight"],
+  ];
+
+  for (const [fieldName, maxValue, label] of truckFields) {
+    const rawValue = String(values[fieldName] || "").trim();
+    if (!rawValue) {
+      continue;
+    }
+
+    const numericValue = Number(rawValue);
+    if (!Number.isFinite(numericValue) || numericValue < 0 || numericValue > maxValue) {
+      return `${label} looks invalid.`;
+    }
+  }
+
+  return "";
+}
+
+function persistRecentLocations(values, currentLocations, setRecentLocations) {
+  const nextLocations = [
+    values.current_location,
+    values.pickup_location,
+    values.dropoff_location,
+    ...currentLocations,
+  ]
+    .map((location) => String(location || "").trim())
+    .filter(Boolean)
+    .filter((location, index, list) => list.findIndex((item) => item.toLowerCase() === location.toLowerCase()) === index)
+    .slice(0, 8);
+
+  setRecentLocations(nextLocations);
+
+  try {
+    window.localStorage.setItem(recentStorageKey, JSON.stringify(nextLocations));
+  } catch {
+    // Recent stops are a convenience only; planning should still work without storage.
+  }
+}
+
+function readRecentLocations() {
+  if (typeof window === "undefined") {
+    return [];
+  }
+
+  try {
+    const stored = window.localStorage.getItem(recentStorageKey);
+    if (!stored) {
+      return [];
+    }
+
+    const parsedLocations = JSON.parse(stored);
+    return Array.isArray(parsedLocations) ? parsedLocations : [];
+  } catch {
+    return [];
+  }
+}
+
+function formatDateTimeLocal(date) {
+  const pad = (value) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(
+    date.getMinutes(),
+  )}`;
+}
+
+function formatReadableDateTime(value) {
+  if (!value) {
+    return "";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function buildLocationCoordinatePayload(selectedPlaces) {
+  const payload = {};
+  for (const [fieldName, point] of Object.entries(selectedPlaces)) {
+    if (!point) {
+      continue;
+    }
+
+    payload[`${fieldName}_latitude`] = point.latitude;
+    payload[`${fieldName}_longitude`] = point.longitude;
+  }
+  return payload;
+}
+
+function buildTruckRoutingPayload(formValues) {
+  const payload = {};
+  const heightFeet = Number(formValues.truck_height_feet);
+  const widthFeet = Number(formValues.truck_width_feet);
+  const weightPounds = Number(formValues.truck_weight_pounds);
+
+  if (Number.isFinite(heightFeet) && heightFeet > 0) {
+    payload.truck_height_meters = roundToTwo(heightFeet * 0.3048);
+  }
+  if (Number.isFinite(widthFeet) && widthFeet > 0) {
+    payload.truck_width_meters = roundToTwo(widthFeet * 0.3048);
+  }
+  if (Number.isFinite(weightPounds) && weightPounds > 0) {
+    payload.truck_weight_tons = roundToTwo(weightPounds * 0.00045359237);
+  }
+
+  return payload;
+}
+
+function roundToTwo(value) {
+  return Math.round(value * 100) / 100;
 }
 
 export default App;
