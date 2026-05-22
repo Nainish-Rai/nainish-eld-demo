@@ -94,7 +94,6 @@ def get_or_fetch_place(query: str, point: tuple[Decimal, Decimal] | None = None)
             "text": query,
             "apiKey": settings.GEOAPIFY_API_KEY,
             "format": "json",
-            "filter": "countrycode:us",
             "limit": 1,
         }
     )

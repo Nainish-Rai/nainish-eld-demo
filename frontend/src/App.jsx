@@ -110,6 +110,10 @@ const recentStorageKey = "spotter_recent_trip_inputs";
 function App() {
   const [formValues, setFormValues] = useState(initialForm);
   const [selectedPlaces, setSelectedPlaces] = useState(initialSelectedPlaces);
+  const [currentLocationBias, setCurrentLocationBias] = useState({
+    status: "idle",
+    point: null,
+  });
   const [activeInputStep, setActiveInputStep] = useState(0);
   const [recentLocations, setRecentLocations] = useState(readRecentLocations);
   const [activeTab, setActiveTab] = useState("schedule");
@@ -201,6 +205,38 @@ function App() {
       ...current,
       [fieldName]: payload.point,
     }));
+  }
+
+  function requestCurrentLocationBias() {
+    if (currentLocationBias.status !== "idle") {
+      return;
+    }
+
+    if (!navigator.geolocation) {
+      setCurrentLocationBias({ status: "unavailable", point: null });
+      return;
+    }
+
+    setCurrentLocationBias({ status: "requesting", point: null });
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setCurrentLocationBias({
+          status: "ready",
+          point: {
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+          },
+        });
+      },
+      () => {
+        setCurrentLocationBias({ status: "denied", point: null });
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 300000,
+      },
+    );
   }
 
   function goToNextStep() {
@@ -313,9 +349,11 @@ function App() {
                     formValues={formValues}
                     selectedPlaces={selectedPlaces}
                     recentLocations={recentLocations}
+                    currentLocationBias={currentLocationBias}
                     onFieldChange={handleFieldChange}
                     onSetField={updateField}
                     onResolvedLocation={handleResolvedLocation}
+                    onRequestCurrentLocationBias={requestCurrentLocationBias}
                     onStepChange={(stepIndex) => {
                       setErrorMessage("");
                       setActiveInputStep(stepIndex);
@@ -433,9 +471,11 @@ function DriverInputFlow({
   formValues,
   selectedPlaces,
   recentLocations,
+  currentLocationBias,
   onFieldChange,
   onSetField,
   onResolvedLocation,
+  onRequestCurrentLocationBias,
   onStepChange,
   onBack,
   onDeparturePreset,
@@ -535,7 +575,9 @@ function DriverInputFlow({
                 name={step.id}
                 value={formValues[step.id]}
                 selectedPlace={selectedPlaces[step.id]}
+                currentLocationBias={currentLocationBias}
                 onChange={(payload) => onResolvedLocation(step.id, payload)}
+                onRequestCurrentLocationBias={onRequestCurrentLocationBias}
                 placeholder={step.placeholder}
               />
               <QuickChipGroup
@@ -615,12 +657,39 @@ function DriverInputFlow({
   );
 }
 
-function LocationSuggestField({ name, value, selectedPlace, onChange, placeholder }) {
+function LocationSuggestField({
+  name,
+  value,
+  selectedPlace,
+  currentLocationBias,
+  onChange,
+  onRequestCurrentLocationBias,
+  placeholder,
+}) {
   const deferredValue = useDeferredValue(value);
   const [suggestions, setSuggestions] = useState([]);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
   const [suggestionError, setSuggestionError] = useState("");
   const canSearch = String(value || "").trim().length >= 3;
+  const biasPoint = name === "current_location" ? currentLocationBias.point : null;
+  const usingNearbyBias = name === "current_location" && currentLocationBias.status === "ready" && biasPoint;
+  let helperText = "Start typing and choose the closest address or place.";
+
+  if (!geoapifyApiKey) {
+    helperText = "Set VITE_GEOAPIFY_API_KEY to enable live location suggestions.";
+  } else if (canSearch && suggestionError) {
+    helperText = suggestionError;
+  } else if (selectedPlace) {
+    helperText = "Geoapify match selected. Trip planning will reuse these coordinates.";
+  } else if (usingNearbyBias) {
+    helperText = "Using nearby results for your current location.";
+  } else if (name === "current_location" && currentLocationBias.status === "requesting") {
+    helperText = "Checking your current location for nearby results.";
+  } else if (name === "current_location" && currentLocationBias.status === "denied") {
+    helperText = "Location access is off. You can still type your current location.";
+  } else if (name === "current_location" && currentLocationBias.status === "unavailable") {
+    helperText = "This device cannot share location. You can still type your current location.";
+  }
 
   useEffect(() => {
     const query = String(deferredValue || "").trim();
@@ -631,7 +700,10 @@ function LocationSuggestField({ name, value, selectedPlace, onChange, placeholde
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => {
       setIsLoadingSuggestions(true);
-      searchLocationSuggestions(query, { signal: controller.signal })
+      searchLocationSuggestions(query, {
+        signal: controller.signal,
+        bias: biasPoint ? `proximity:${biasPoint.longitude},${biasPoint.latitude}` : undefined,
+      })
         .then((results) => {
           setSuggestions(results);
           setSuggestionError("");
@@ -653,7 +725,7 @@ function LocationSuggestField({ name, value, selectedPlace, onChange, placeholde
       window.clearTimeout(timeoutId);
       controller.abort();
     };
-  }, [deferredValue]);
+  }, [biasPoint, deferredValue]);
 
   return (
     <Autocomplete
@@ -691,6 +763,11 @@ function LocationSuggestField({ name, value, selectedPlace, onChange, placeholde
           onChange({ text: nextValue, point: null });
         }
       }}
+      onOpen={() => {
+        if (name === "current_location") {
+          onRequestCurrentLocationBias();
+        }
+      }}
       renderInput={(params) => (
         <TextField
           {...params}
@@ -699,15 +776,7 @@ function LocationSuggestField({ name, value, selectedPlace, onChange, placeholde
           placeholder={placeholder}
           required
           fullWidth
-          helperText={
-            !geoapifyApiKey
-              ? "Set VITE_GEOAPIFY_API_KEY to enable live location suggestions."
-              : canSearch && suggestionError
-              ? suggestionError
-              : selectedPlace
-                ? "Geoapify match selected. Trip planning will reuse these coordinates."
-                : "Start typing and choose the closest address or place."
-          }
+          helperText={helperText}
           sx={largeFieldStyles}
         />
       )}
@@ -1164,10 +1233,19 @@ function buildLocationCoordinatePayload(selectedPlaces) {
       continue;
     }
 
-    payload[`${fieldName}_latitude`] = point.latitude;
-    payload[`${fieldName}_longitude`] = point.longitude;
+    payload[`${fieldName}_latitude`] = normalizeCoordinate(point.latitude);
+    payload[`${fieldName}_longitude`] = normalizeCoordinate(point.longitude);
   }
   return payload;
+}
+
+function normalizeCoordinate(value) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return value;
+  }
+
+  return Number(numericValue.toFixed(6));
 }
 
 export default App;
