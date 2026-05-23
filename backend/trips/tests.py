@@ -1,22 +1,21 @@
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
-from django.test import TestCase, override_settings
+from django.test import SimpleTestCase, override_settings
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from .models import PlaceCache, RouteCache, TripRequest
 from .planner import RouteLeg, RouteTemplate, TripPlanningInput, build_trip_plan
-from .routing import build_live_route_template, normalize_query
+from .routing import build_live_route_template
 
 
-class TripPlanApiTests(TestCase):
+class TripPlanApiTests(SimpleTestCase):
     def setUp(self):
         self.client = APIClient()
 
     @patch("trips.views.build_live_route_template")
-    def test_plan_trip_creates_persisted_request_and_returns_live_hos_plan(self, mock_route_template):
+    def test_plan_trip_returns_live_hos_plan_without_persisting(self, mock_route_template):
         mock_route_template.return_value = _default_route_template()
 
         response = self.client.post(
@@ -32,9 +31,13 @@ class TripPlanApiTests(TestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(TripRequest.objects.count(), 1)
+        self.assertEqual(response.data["mode"], "stateless")
+        self.assertEqual(response.data["status"], "planned")
+        self.assertIn("generated_at", response.data)
         self.assertFalse(response.data["plan"]["compliance_summary"]["is_placeholder"])
         self.assertEqual(response.data["plan"]["compliance_summary"]["inserted_breaks"], 1)
+        self.assertEqual(response.data["plan"]["compliance_summary"]["rule_set"]["driver_type"], "property_carrying")
+        self.assertEqual(response.data["plan"]["compliance_summary"]["rule_set"]["cycle"], "70_hours_8_days")
 
     @patch("trips.views.build_live_route_template")
     def test_plan_trip_rejects_cycle_hours_above_limit(self, mock_route_template):
@@ -53,55 +56,47 @@ class TripPlanApiTests(TestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(TripRequest.objects.count(), 0)
 
     @patch("trips.views.build_live_route_template")
-    def test_get_trip_returns_saved_record(self, mock_route_template):
+    def test_plan_trip_rejects_partial_coordinate_pairs(self, mock_route_template):
         mock_route_template.return_value = _default_route_template()
 
-        create_response = self.client.post(
+        response = self.client.post(
             reverse("plan-trip"),
             {
                 "current_location": "Chicago, IL",
                 "pickup_location": "Indianapolis, IN",
                 "dropoff_location": "Atlanta, GA",
+                "current_location_latitude": "41.878100",
                 "departure_at": "2026-05-19T08:00:00Z",
-                "current_cycle_used_hours": "8.00",
+                "current_cycle_used_hours": "12.50",
             },
             format="json",
         )
 
-        trip_id = create_response.data["trip_id"]
-        response = self.client.get(reverse("get-trip", kwargs={"trip_id": trip_id}))
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("current_location_latitude", response.data)
+        self.assertIn("current_location_longitude", response.data)
+
+    @override_settings(GEOAPIFY_API_KEY="")
+    def test_health_reports_degraded_when_geocoding_is_not_configured(self):
+        response = self.client.get(reverse("health"))
+
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertEqual(response.json()["status"], "degraded")
+
+    @override_settings(GEOAPIFY_API_KEY="test-geoapify-key")
+    def test_health_reports_ready_when_required_dependencies_are_configured(self):
+        response = self.client.get(reverse("health"))
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["current_location"], "Chicago, IL")
-        self.assertIn("route", response.data["plan_data"])
-
-    @patch("trips.views.build_live_route_template")
-    def test_trip_pdf_returns_pdf_attachment(self, mock_route_template):
-        mock_route_template.return_value = _default_route_template()
-
-        create_response = self.client.post(
-            reverse("plan-trip"),
-            {
-                "current_location": "Chicago, IL",
-                "pickup_location": "Indianapolis, IN",
-                "dropoff_location": "Atlanta, GA",
-                "departure_at": "2026-05-19T08:00:00Z",
-                "current_cycle_used_hours": "8.00",
-            },
-            format="json",
-        )
-
-        trip_id = create_response.data["trip_id"]
-        response = self.client.get(reverse("trip-pdf", kwargs={"trip_id": trip_id}))
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response["Content-Type"], "application/pdf")
+        payload = response.json()
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["mode"], "stateless")
+        self.assertTrue(payload["planner_ready"])
 
 
-class HosPlannerTests(TestCase):
+class HosPlannerTests(SimpleTestCase):
     def test_standard_route_inserts_30_minute_break_after_eight_hours_of_driving(self):
         plan = build_trip_plan(_trip_input(), route_template=_default_route_template())
 
@@ -120,6 +115,24 @@ class HosPlannerTests(TestCase):
         self.assertIn("Shipping", plan["daily_logs"][0]["sheet_svg"])
         self.assertIn("Recap:", plan["daily_logs"][0]["sheet_svg"])
         self.assertIn("70 Hour / 8 Day", plan["daily_logs"][0]["sheet_svg"])
+        self.assertIn("Off duty / released from work", plan["daily_logs"][0]["sheet_svg"])
+        self.assertEqual(plan["duty_events"][-1]["remarks"], "Off duty / released from work")
+
+    def test_generated_stops_include_coordinates_for_route_map_markers(self):
+        plan = build_trip_plan(_trip_input(), route_template=_default_route_template())
+
+        mapped_stops = [
+            stop
+            for stop in plan["stops"]
+            if stop["kind"] in {"pre_trip", "pickup", "dropoff", "break", "post_trip"}
+        ]
+        break_stop = next(stop for stop in mapped_stops if stop["kind"] == "break")
+
+        self.assertTrue(mapped_stops)
+        self.assertTrue(all(stop["latitude"] is not None and stop["longitude"] is not None for stop in mapped_stops))
+        self.assertEqual(break_stop["status"], "off_duty")
+        self.assertIn("start_at", break_stop)
+        self.assertIn("end_at", break_stop)
 
     def test_long_drive_spills_into_second_shift_after_ten_hour_rest(self):
         long_route = RouteTemplate(
@@ -158,11 +171,54 @@ class HosPlannerTests(TestCase):
             any("34-hour restart" in warning for warning in plan["compliance_summary"]["warnings"])
         )
 
+    def test_long_route_inserts_on_duty_fuel_stops_every_thousand_miles(self):
+        long_route = RouteTemplate(
+            provider="test",
+            notes="test route",
+            legs=(
+                RouteLeg(
+                    "Drive to pickup",
+                    "Chicago, IL",
+                    "Indianapolis, IN",
+                    60,
+                    Decimal("80.0"),
+                    ((41.8781, -87.6298), (39.7684, -86.1581)),
+                ),
+                RouteLeg(
+                    "Drive to dropoff",
+                    "Indianapolis, IN",
+                    "Phoenix, AZ",
+                    1800,
+                    Decimal("2100.0"),
+                    ((39.7684, -86.1581), (35.4676, -97.5164), (33.4484, -112.0740)),
+                ),
+            ),
+            geometry_coordinates=((41.8781, -87.6298), (39.7684, -86.1581), (35.4676, -97.5164), (33.4484, -112.0740)),
+            waypoints=(
+                {"kind": "current", "query": "Chicago, IL", "formatted_address": "Chicago, IL", "latitude": 41.8781, "longitude": -87.6298},
+                {"kind": "pickup", "query": "Indianapolis, IN", "formatted_address": "Indianapolis, IN", "latitude": 39.7684, "longitude": -86.1581},
+                {"kind": "dropoff", "query": "Phoenix, AZ", "formatted_address": "Phoenix, AZ", "latitude": 33.4484, "longitude": -112.0740},
+            ),
+        )
+
+        plan = build_trip_plan(_trip_input(dropoff_location="Phoenix, AZ"), route_template=long_route)
+        fuel_events = [
+            event
+            for event in plan["duty_events"]
+            if event["status"] == "on_duty" and "Fuel stop" in event["remarks"]
+        ]
+        fuel_stops = [stop for stop in plan["stops"] if stop["kind"] == "fuel"]
+
+        self.assertGreaterEqual(len(fuel_events), 2)
+        self.assertEqual(plan["compliance_summary"]["inserted_fuel_stops"], len(fuel_events))
+        self.assertTrue(all(event["duration_minutes"] == 30 for event in fuel_events))
+        self.assertTrue(all(stop["latitude"] is not None and stop["longitude"] is not None for stop in fuel_stops))
+
 
 @override_settings(GEOAPIFY_API_KEY="test-geoapify-key")
-class RoutingCacheTests(TestCase):
+class RoutingServiceTests(SimpleTestCase):
     @patch("trips.routing.requests.get")
-    def test_build_live_route_template_populates_place_and_route_cache(self, mock_get):
+    def test_build_live_route_template_fetches_places_and_routes(self, mock_get):
         mock_get.side_effect = [
             _mock_response(_geocode_result("Chicago, IL", "Chicago, IL", "41.8781", "-87.6298")),
             _mock_response(_geocode_result("Indianapolis, IN", "Indianapolis, IN", "39.7684", "-86.1581")),
@@ -173,14 +229,17 @@ class RoutingCacheTests(TestCase):
 
         route_template = build_live_route_template("Chicago, IL", "Indianapolis, IN", "Atlanta, GA")
 
-        self.assertEqual(PlaceCache.objects.count(), 3)
-        self.assertEqual(RouteCache.objects.count(), 2)
         self.assertEqual(route_template.provider, "osrm")
         self.assertEqual(route_template.total_drive_minutes, 5400 // 60 + 27000 // 60)
 
     @patch("trips.routing.requests.get")
-    def test_second_route_request_uses_cache(self, mock_get):
+    def test_second_route_request_fetches_again_in_stateless_mode(self, mock_get):
         mock_get.side_effect = [
+            _mock_response(_geocode_result("Chicago, IL", "Chicago, IL", "41.8781", "-87.6298")),
+            _mock_response(_geocode_result("Indianapolis, IN", "Indianapolis, IN", "39.7684", "-86.1581")),
+            _mock_response(_geocode_result("Atlanta, GA", "Atlanta, GA", "33.7490", "-84.3880")),
+            _mock_response(_route_result(193121.0, 5400.0, [[-87.6298, 41.8781], [-86.1581, 39.7684]])),
+            _mock_response(_route_result(676000.0, 27000.0, [[-86.1581, 39.7684], [-84.3880, 33.7490]])),
             _mock_response(_geocode_result("Chicago, IL", "Chicago, IL", "41.8781", "-87.6298")),
             _mock_response(_geocode_result("Indianapolis, IN", "Indianapolis, IN", "39.7684", "-86.1581")),
             _mock_response(_geocode_result("Atlanta, GA", "Atlanta, GA", "33.7490", "-84.3880")),
@@ -191,15 +250,17 @@ class RoutingCacheTests(TestCase):
         build_live_route_template("Chicago, IL", "Indianapolis, IN", "Atlanta, GA")
         build_live_route_template("Chicago, IL", "Indianapolis, IN", "Atlanta, GA")
 
-        self.assertEqual(mock_get.call_count, 5)
-        self.assertEqual(normalize_query("  Chicago   IL "), "chicago il")
+        self.assertEqual(mock_get.call_count, 10)
 
 
-def _trip_input(current_cycle_used_hours: Decimal = Decimal("12.50")) -> TripPlanningInput:
+def _trip_input(
+    current_cycle_used_hours: Decimal = Decimal("12.50"),
+    dropoff_location: str = "Atlanta, GA",
+) -> TripPlanningInput:
     return TripPlanningInput(
         current_location="Chicago, IL",
         pickup_location="Indianapolis, IN",
-        dropoff_location="Atlanta, GA",
+        dropoff_location=dropoff_location,
         departure_at_iso="2026-05-19T08:00:00+00:00",
         current_cycle_used_hours=current_cycle_used_hours,
     )
@@ -210,8 +271,22 @@ def _default_route_template() -> RouteTemplate:
         provider="test",
         notes="test route",
         legs=(
-            RouteLeg("Drive to pickup", "Chicago, IL", "Indianapolis, IN", 90, Decimal("120.0")),
-            RouteLeg("Drive to dropoff", "Indianapolis, IN", "Atlanta, GA", 450, Decimal("420.0")),
+            RouteLeg(
+                "Drive to pickup",
+                "Chicago, IL",
+                "Indianapolis, IN",
+                90,
+                Decimal("120.0"),
+                ((41.8781, -87.6298), (39.7684, -86.1581)),
+            ),
+            RouteLeg(
+                "Drive to dropoff",
+                "Indianapolis, IN",
+                "Atlanta, GA",
+                450,
+                Decimal("420.0"),
+                ((39.7684, -86.1581), (37.9716, -85.6936), (33.7490, -84.3880)),
+            ),
         ),
         geometry_coordinates=((41.8781, -87.6298), (39.7684, -86.1581), (33.7490, -84.3880)),
         waypoints=(

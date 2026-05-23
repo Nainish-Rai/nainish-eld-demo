@@ -1,26 +1,32 @@
 from decimal import Decimal
-from io import BytesIO
 
-from django.db import connection
-from django.http import FileResponse, JsonResponse
-from django.shortcuts import get_object_or_404
+from django.conf import settings
+from django.http import JsonResponse
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from .eld_renderer import build_trip_pdf
-from .models import TripRequest
 from .planner import TripPlanningInput, build_trip_plan
 from .routing import RoutingServiceError, build_live_route_template
-from .serializers import TripPlanRequestSerializer, TripRequestSerializer
+from .serializers import TripPlanRequestSerializer
 
 
 def health(request):
-    with connection.cursor() as cursor:
-        cursor.execute("SELECT 1")
-        cursor.fetchone()
-
-    return JsonResponse({"status": "ok", "database": "ok"})
+    planner_ready = bool(settings.GEOAPIFY_API_KEY and settings.OSRM_BASE_URL)
+    status_code = status.HTTP_200_OK if planner_ready else status.HTTP_503_SERVICE_UNAVAILABLE
+    return JsonResponse(
+        {
+            "status": "ok" if planner_ready else "degraded",
+            "mode": "stateless",
+            "planner_ready": planner_ready,
+            "dependencies": {
+                "geoapify_api_key_configured": bool(settings.GEOAPIFY_API_KEY),
+                "osrm_base_url_configured": bool(settings.OSRM_BASE_URL),
+            },
+        },
+        status=status_code,
+    )
 
 
 @api_view(["POST"])
@@ -51,42 +57,14 @@ def plan_trip(request):
 
     plan_data = build_trip_plan(trip_input, route_template=route_template)
 
-    trip_request = TripRequest.objects.create(
-        current_location=trip_input.current_location,
-        pickup_location=trip_input.pickup_location,
-        dropoff_location=trip_input.dropoff_location,
-        departure_at=validated["departure_at"],
-        current_cycle_used_hours=validated["current_cycle_used_hours"],
-        plan_data=plan_data,
-    )
-
     return Response(
         {
-            "trip_id": str(trip_request.id),
-            "status": trip_request.status,
+            "mode": "stateless",
+            "status": "planned",
+            "generated_at": timezone.now().isoformat(),
             "plan": plan_data,
         },
         status=status.HTTP_201_CREATED,
-    )
-
-
-@api_view(["GET"])
-def get_trip(request, trip_id):
-    trip_request = get_object_or_404(TripRequest, id=trip_id)
-    serializer = TripRequestSerializer(trip_request)
-    return Response(serializer.data)
-
-
-@api_view(["GET"])
-def trip_pdf(request, trip_id):
-    trip_request = get_object_or_404(TripRequest, id=trip_id)
-    pdf_bytes = build_trip_pdf(trip_request.plan_data, str(trip_request.id))
-
-    return FileResponse(
-        BytesIO(pdf_bytes),
-        as_attachment=True,
-        filename=f"trip-{trip_request.id}-eld-logs.pdf",
-        content_type="application/pdf",
     )
 
 
@@ -96,4 +74,4 @@ def _build_point(validated: dict, prefix: str) -> tuple[Decimal, Decimal] | None
     if latitude is None or longitude is None:
         return None
 
-    return (Decimal(latitude), Decimal(longitude))
+    return (latitude, longitude)

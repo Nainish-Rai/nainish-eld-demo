@@ -262,10 +262,10 @@ function buildLayout(dailyLog, plan) {
     toLocation: truncate(lastEventLocation(events), 56),
     milesDrivingToday: roundOne(drivingMiles),
     milesTotalToday: roundOne(drivingMiles),
-    vehicleUnitNumbers: "Truck 184 / Trailer 52 / Demo Fleet",
+    vehicleUnitNumbers: readLogField(plan, ["input_summary", "vehicle_unit_numbers"], "Vehicle unit numbers not provided"),
     headerLines: [
-      { x1: 470, x2: 955, y: 120, label: "Name of Carrier or Carriers", value: "Spotter AI Demo Carrier" },
-      { x1: 470, x2: 955, y: 156, label: "Main Office Address", value: "Planner-generated interstate trip" },
+      { x1: 470, x2: 955, y: 120, label: "Name of Carrier or Carriers", value: readLogField(plan, ["input_summary", "carrier_name"], "Carrier name not provided") },
+      { x1: 470, x2: 955, y: 156, label: "Main Office Address", value: readLogField(plan, ["input_summary", "main_office_address"], "Main office address not provided") },
       { x1: 470, x2: 955, y: 192, label: "Home Terminal Address", value: truncate(firstEventLocation(events), 58) },
     ],
     rowTotals: [
@@ -277,8 +277,8 @@ function buildLayout(dailyLog, plan) {
     segments,
     connectors,
     remarks: buildRemarks(events),
-    shippingManifest: `Trip date ${dailyLog.date}`,
-    shippingCommodity: truncate(`Shipper: ${plan.input_summary.pickup_location || "Pickup stop"} / General freight`, 40),
+    shippingManifest: readLogField(plan, ["input_summary", "shipping_manifest"], "Manifest / BOL number not provided"),
+    shippingCommodity: readLogField(plan, ["input_summary", "shipping_commodity"], "Shipper and commodity not provided"),
     recapColumns: buildRecapColumns(activeTodayHours, currentCycleUsed, rollingCycle, remainingCycle, events),
   };
 }
@@ -321,10 +321,14 @@ function buildRowLabels() {
 }
 
 function buildRemarks(events) {
-  return events
+  const remarks = events
     .filter((event) => event.remarks !== "Off duty")
-    .slice(0, 8)
     .map((event) => `${formatTime(event.start_at)}  ${truncate(event.location, 24)}  ${truncate(event.remarks, 48)}`);
+  const releaseRemark = remarks.find((remark) => remark.includes("Off duty / released from work"));
+  if (releaseRemark && remarks.length > 8) {
+    return [...remarks.slice(0, 7), releaseRemark];
+  }
+  return remarks.slice(0, 8);
 }
 
 function buildRecapColumns(activeTodayHours, currentCycleUsed, rollingCycle, remainingCycle, events) {
@@ -409,6 +413,20 @@ function truncate(value, length) {
     return value || "";
   }
   return `${value.slice(0, length - 3)}...`;
+}
+
+function readLogField(plan, path, fallback) {
+  let current = plan;
+  for (const key of path) {
+    if (!current || typeof current !== "object") {
+      return fallback;
+    }
+
+    current = current[key];
+  }
+
+  const value = String(current || "").trim();
+  return value || fallback;
 }
 
 function toPdfY(y) {

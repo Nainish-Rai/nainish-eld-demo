@@ -2,13 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_HALF_UP
-import re
 from urllib.parse import urlencode
 
 import requests
 from django.conf import settings
 
-from .models import PlaceCache, RouteCache
 from .planner import RouteLeg, RouteTemplate
 
 
@@ -81,11 +79,6 @@ def get_or_fetch_place(query: str, point: tuple[Decimal, Decimal] | None = None)
             provider="geoapify-client-selection",
         )
 
-    normalized_query = normalize_query(query)
-    cached_place = PlaceCache.objects.filter(normalized_query=normalized_query).first()
-    if cached_place is not None:
-        return _to_resolved_place(cached_place)
-
     if not settings.GEOAPIFY_API_KEY:
         raise RoutingServiceError("GEOAPIFY_API_KEY is not configured.")
 
@@ -111,24 +104,16 @@ def get_or_fetch_place(query: str, point: tuple[Decimal, Decimal] | None = None)
         raise RoutingServiceError(f"Unable to resolve location: {query}")
 
     first_result = results[0]
-    place = PlaceCache.objects.create(
-        normalized_query=normalized_query,
+    return ResolvedPlace(
         query=query,
         formatted_address=(first_result.get("formatted") or query)[:255],
         latitude=_quantize_coordinate(first_result["lat"]),
         longitude=_quantize_coordinate(first_result["lon"]),
         provider="geoapify-geocoding",
-        raw_data=first_result,
     )
-    return _to_resolved_place(place)
 
 
 def get_or_fetch_route(origin: ResolvedPlace, destination: ResolvedPlace, label: str) -> RouteLeg:
-    cache_key = build_route_cache_key(origin, destination)
-    cached_route = RouteCache.objects.filter(cache_key=cache_key).select_related("origin", "destination").first()
-    if cached_route is not None:
-        return _to_route_leg(cached_route, label)
-
     route_path = f"{origin.route_coordinate()};{destination.route_coordinate()}"
     params = urlencode({"overview": "full", "geometries": "geojson", "steps": "true"})
     url = f"{settings.OSRM_BASE_URL}/route/v1/driving/{route_path}?{params}"
@@ -145,68 +130,15 @@ def get_or_fetch_route(origin: ResolvedPlace, destination: ResolvedPlace, label:
         raise RoutingServiceError(f"Unable to build a route for {origin.query} -> {destination.query}")
 
     first_route = routes[0]
-    origin_cache = _ensure_place_cache(origin)
-    destination_cache = _ensure_place_cache(destination)
-    route_cache = RouteCache.objects.create(
-        cache_key=cache_key,
-        provider="osrm",
-        origin=origin_cache,
-        destination=destination_cache,
-        distance_miles=_meters_to_miles(first_route["distance"]),
-        duration_minutes=_seconds_to_minutes(first_route["duration"]),
-        geometry=first_route["geometry"],
-        raw_data=first_route,
-    )
-    return _to_route_leg(route_cache, label)
-
-
-def normalize_query(query: str) -> str:
-    ascii_query = re.sub(r"[^a-z0-9]+", " ", query.strip().lower())
-    return " ".join(ascii_query.split())
-
-
-def build_route_cache_key(origin: ResolvedPlace, destination: ResolvedPlace) -> str:
-    return f"{origin.latitude}:{origin.longitude}->{destination.latitude}:{destination.longitude}"
-
-
-def _to_resolved_place(place: PlaceCache) -> ResolvedPlace:
-    return ResolvedPlace(
-        query=place.query,
-        formatted_address=place.formatted_address,
-        latitude=place.latitude,
-        longitude=place.longitude,
-        provider=place.provider,
-    )
-
-
-def _ensure_place_cache(place: ResolvedPlace) -> PlaceCache:
-    normalized_query = normalize_query(place.query)
-    cached_place, _ = PlaceCache.objects.update_or_create(
-        normalized_query=normalized_query,
-        defaults={
-            "query": place.query,
-            "formatted_address": place.formatted_address,
-            "latitude": place.latitude,
-            "longitude": place.longitude,
-            "provider": place.provider,
-            "raw_data": {},
-        },
-    )
-    return cached_place
-
-
-def _to_route_leg(route_cache: RouteCache, label: str) -> RouteLeg:
-    coordinates = route_cache.geometry.get("coordinates", [])
+    coordinates = first_route.get("geometry", {}).get("coordinates", [])
     return RouteLeg(
         label=label,
-        start_location=route_cache.origin.query,
-        end_location=route_cache.destination.query,
-        duration_minutes=route_cache.duration_minutes,
-        distance_miles=route_cache.distance_miles,
+        start_location=origin.query,
+        end_location=destination.query,
+        duration_minutes=_seconds_to_minutes(first_route["duration"]),
+        distance_miles=_meters_to_miles(first_route["distance"]),
         geometry_coordinates=tuple((coordinate[1], coordinate[0]) for coordinate in coordinates),
     )
-
-
 def _meters_to_miles(distance_meters: float) -> Decimal:
     miles = Decimal(str(distance_meters)) / Decimal("1609.344")
     return miles.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)

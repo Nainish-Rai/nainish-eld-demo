@@ -1,7 +1,5 @@
 from rest_framework import serializers
 
-from .models import TripRequest
-
 
 class TripPlanRequestSerializer(serializers.Serializer):
     current_location = serializers.CharField(max_length=255)
@@ -16,19 +14,25 @@ class TripPlanRequestSerializer(serializers.Serializer):
     departure_at = serializers.DateTimeField()
     current_cycle_used_hours = serializers.DecimalField(max_digits=5, decimal_places=2, min_value=0, max_value=70)
 
+    def validate(self, attrs):
+        _validate_coordinate_pair(attrs, "current_location")
+        _validate_coordinate_pair(attrs, "pickup_location")
+        _validate_coordinate_pair(attrs, "dropoff_location")
+        return attrs
 
-class TripRequestSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = TripRequest
-        fields = (
-            "id",
-            "current_location",
-            "pickup_location",
-            "dropoff_location",
-            "departure_at",
-            "current_cycle_used_hours",
-            "status",
-            "plan_data",
-            "created_at",
-            "updated_at",
-        )
+
+def _validate_coordinate_pair(attrs: dict, prefix: str) -> None:
+    latitude_key = f"{prefix}_latitude"
+    longitude_key = f"{prefix}_longitude"
+    latitude = attrs.get(latitude_key)
+    longitude = attrs.get(longitude_key)
+
+    if (latitude is None) == (longitude is None):
+        return
+
+    raise serializers.ValidationError(
+        {
+            latitude_key: ["Latitude and longitude must be provided together."],
+            longitude_key: ["Latitude and longitude must be provided together."],
+        }
+    )

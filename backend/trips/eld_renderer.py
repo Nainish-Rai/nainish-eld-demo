@@ -445,8 +445,8 @@ def _build_layout(daily_log: dict, plan_data: dict) -> dict:
     remaining_cycle = max(Decimal("0.0"), MAX_CYCLE_HOURS - rolling_cycle)
 
     header_lines = [
-        {"x1": 470, "x2": 955, "y": 120, "label": "Name of Carrier or Carriers", "value": "Spotter AI Demo Carrier"},
-        {"x1": 470, "x2": 955, "y": 156, "label": "Main Office Address", "value": "Planner-generated interstate trip"},
+        {"x1": 470, "x2": 955, "y": 120, "label": "Name of Carrier or Carriers", "value": "Carrier name required"},
+        {"x1": 470, "x2": 955, "y": 156, "label": "Main Office Address", "value": "Main office address required"},
         {"x1": 470, "x2": 955, "y": 192, "label": "Home Terminal Address", "value": _truncate(_first_event_location(events), 58)},
     ]
 
@@ -472,11 +472,8 @@ def _build_layout(daily_log: dict, plan_data: dict) -> dict:
         "segments": segments,
         "connectors": connectors,
         "remarks": _build_remarks(events),
-        "shipping_manifest": f"Trip date {daily_log['date']}",
-        "shipping_commodity": _truncate(
-            f"Shipper: {plan_data['input_summary'].get('pickup_location', 'Pickup stop')} / General freight",
-            40,
-        ),
+        "shipping_manifest": "Enter manifest / BOL no.",
+        "shipping_commodity": "Enter shipper and commodity",
         "recap_columns": _build_recap_columns(active_today_hours, current_cycle_used, rolling_cycle, remaining_cycle, events),
     }
 
@@ -527,13 +524,19 @@ def _build_row_labels() -> list[dict]:
 
 def _build_remarks(events: list[dict]) -> list[str]:
     remarks = []
+    release_remark = None
     for event in events:
         if event["remarks"] == "Off duty":
             continue
         time_label = _format_time(event["start_at"])
         location = _truncate(event["location"], 24)
         activity = _truncate(event["remarks"], 48)
-        remarks.append(f"{time_label}  {location}  {activity}")
+        remark = f"{time_label}  {location}  {activity}"
+        if event["remarks"] == "Off duty / released from work":
+            release_remark = remark
+        remarks.append(remark)
+    if release_remark and len(remarks) > 8:
+        return [*remarks[:7], release_remark]
     return remarks[:8]
 
 

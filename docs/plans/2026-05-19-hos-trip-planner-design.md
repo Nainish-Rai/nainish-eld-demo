@@ -27,25 +27,18 @@ Assumptions:
 ```text
 React + Material UI frontend
   -> Django REST API
-      -> Geocoding service with Postgres cache
+      -> Stateless geocoding service wrapper
       -> OSRM routing service wrapper
       -> HOS scheduler
-      -> ELD log renderer
-      -> PDF exporter
-  -> Postgres
+      -> ELD log data
+      -> PDF export contract
 ```
 
-Postgres is required in all environments. The app does not use SQLite as a fallback. Local development uses Docker Compose to provide Postgres, and hosted deployment should use a managed Postgres database.
+The backend is permanently stateless. It does not persist trip requests, route caches, or generated PDFs. Every request resolves locations, computes the route, builds the HOS plan, and returns the result directly to the frontend.
 
-This should be implemented as a pragmatic tracer bullet first: one thin but real vertical slice from MUI form to DRF endpoint to Postgres persistence to rendered schedule response. After that slice works, the HOS rules, route adapter, map, log renderer, and PDF export can be deepened without changing the shape of the system.
+This should be implemented as a pragmatic tracer bullet first: one thin but real vertical slice from MUI form to DRF endpoint to rendered schedule response. After that slice works, the HOS rules, route adapter, map, log renderer, and PDF export can be deepened without changing the shape of the system.
 
 ## Data Model
-
-`TripRequest` stores the raw user request and resolved plan status.
-
-`Place` stores normalized geocoding results and caches address lookups.
-
-`RoutePlan` stores route geometry, distance, duration, and step metadata.
 
 `DutyEvent` is the canonical trip timeline. Each event has a start, end, duty status, location, remarks, and mileage delta.
 
@@ -82,7 +75,7 @@ Each daily log is rendered from the same event data used by the scheduler.
 - Row 3: Driving
 - Row 4: On Duty, Not Driving
 
-The renderer draws horizontal duty-status lines, vertical transitions, remarks, row totals, and daily mileage. PDF export uses the same daily log model, so screen and export stay consistent.
+The app now uses a PDF-first rendering path for the visible log sheets. React receives the scheduler's `DailyLog` data, generates FMCSA-style log PDFs with `pdf-lib`, and previews that same PDF with PDF.js. The legacy backend SVG data can remain as a compatibility artifact, but the user-facing log preview and download now share the same PDF document.
 
 ## UX
 
@@ -111,56 +104,49 @@ The frontend should visibly demonstrate attention to detail expected by the JD:
 The implementation should make the evaluator see these strengths quickly:
 
 - `React + MUI`: Use MUI components for the main workspace, form controls, tabs, alerts, progress states, tables, and buttons.
-- `Django + DRF`: Expose clean REST endpoints with serializers, validation, and focused service modules.
+- `Django + DRF`: Expose clean stateless REST endpoints with serializers, validation, and focused service modules.
 - `Algorithmic logic`: Keep the HOS scheduler in a pure Python domain module with tests for edge cases.
 - `Business rules in UI`: Show why each stop/rest was inserted and which HOS rule caused it.
-- `Performance instincts`: Cache geocoding results in Postgres, add request timeouts, avoid repeated route calls, and keep route/log payloads shaped for the UI.
+- `Performance instincts`: Add request timeouts, keep route/log payloads shaped for the UI, and make external dependency failures explicit.
 - `Pragmatic shipping`: Build a complete vertical slice early, then iterate on accuracy and polish.
 
 ## Deployment
 
 Local:
 
-- Docker Compose Postgres
 - Django API on port `8000`
 - Vite React app on port `5173`
 
 Hosted:
 
 - Backend on Render, Railway, Fly.io, or similar
-- Managed Postgres
 - Frontend on Vercel or Netlify
-- `DATABASE_URL` required
+- `GEOAPIFY_API_KEY` required
 - CORS configured for the frontend domain
 
 ## API
 
-`POST /api/trips/plan/` creates a trip plan.
+`POST /api/trips/plan/` creates a trip plan and returns the full plan payload directly.
 
-`GET /api/trips/{id}/` returns a saved plan.
-
-`GET /api/trips/{id}/pdf/` downloads the rendered PDF.
-
-`GET /api/health/` returns service and database readiness.
+`GET /api/health/` returns stateless planner readiness, including whether required routing dependencies are configured.
 
 ## Progress
 
 Current status as of `2026-05-19`:
 
-- Completed: Postgres-only local runtime with Docker Compose
-- Completed: Django project wiring, DRF install, `TripRequest` model, and migrations
-- Completed: `POST /api/trips/plan/`, `GET /api/trips/{id}/`, and `GET /api/health/`
+- Completed: Django project wiring and DRF install
+- Completed: stateless `POST /api/trips/plan/` and `GET /api/health/`
 - Completed: Vite React scaffold from official docs
 - Completed: Material UI workspace shell with form submission and result tabs
 - Completed: backend tests for API contract and request validation
 - Completed: frontend production build verification
 - Completed: replace the deterministic placeholder schedule with a real HOS scheduler
 - Completed: scheduler tests for break insertion, second-shift rollover, and cycle restart behavior
-- Completed: cached geocoding and OSRM routing adapters backed by Postgres
+- Completed: stateless Geoapify geocoding and OSRM routing adapters
 - Completed: route geometry, waypoints, and live route output in the API response
 - Completed: route map rendering in the React workspace
-- Completed: daily log sheet SVG rendering from generated duty events
-- Completed: PDF export from the same daily log model
+- Completed: daily log sheet rendering from generated duty events
+- Completed: PDF-first log generation with `pdf-lib` and browser preview through PDF.js
 - Completed: align the rendered log sheet layout more closely with the FMCSA paper form reference in `blank-paper-log.png`
 
 Current live local URLs:
@@ -171,9 +157,9 @@ Current live local URLs:
 Current technical posture:
 
 - The vertical slice is working end to end.
-- The API contract is stable enough for the frontend to keep moving.
+- The API contract is explicitly stateless and frontend-oriented.
 - The HOS engine is now the source of truth for the generated schedule.
-- Route geometry and travel duration are now live and cached.
+- Route geometry and travel duration are now live and generated per request.
 - The core assignment flow is now implemented end to end.
 - The latest polish pass fixed log-sheet header/grid overlap, preview scaling, border padding, remarks-section collisions, and duty-line join artifacts.
 
@@ -182,7 +168,6 @@ Current technical posture:
 1. Build the tracer bullet:
    - MUI trip form
    - `POST /api/trips/plan/`
-   - Postgres-backed `TripRequest`
    - simple deterministic placeholder schedule response
 
 2. Replace the placeholder with the tested HOS scheduler:
@@ -191,7 +176,6 @@ Current technical posture:
    - Unit tests for 30-minute break, 11-hour limit, 14-hour window, and 70-hour cap
 
 3. Add route and geocoding adapters:
-   - Cached geocode records
    - OSRM route wrapper
    - Timeouts and graceful API failure messages
 

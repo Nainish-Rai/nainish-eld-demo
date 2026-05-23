@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useTheme } from "@mui/material/styles";
 import { Alert, Box, CircularProgress, Stack } from "@mui/material";
 import * as pdfjsLib from "pdfjs-dist";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.mjs?url";
@@ -6,6 +7,7 @@ import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.mjs?url";
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 export function PdfLogPreview({ pdfBytes }) {
+  const theme = useTheme();
   const containerRef = useRef(null);
   const [status, setStatus] = useState("idle");
   const [errorMessage, setErrorMessage] = useState("");
@@ -43,9 +45,9 @@ export function PdfLogPreview({ pdfBytes }) {
           canvas.style.display = "block";
           canvas.style.width = `${viewport.width}px`;
           canvas.style.height = `${viewport.height}px`;
-          canvas.style.background = "#ffffff";
-          canvas.style.border = "1px solid rgba(24,38,31,0.12)";
-          canvas.style.boxShadow = "0 14px 32px rgba(24,38,31,0.12)";
+          canvas.style.background = theme.planner.canvasBackground;
+          canvas.style.border = theme.planner.canvasBorder;
+          canvas.style.boxShadow = theme.planner.canvasShadow;
           canvas.style.flex = "0 0 auto";
 
           if (pageNumber > 1) {
@@ -74,7 +76,7 @@ export function PdfLogPreview({ pdfBytes }) {
       loadingTask.destroy();
       container.replaceChildren();
     };
-  }, [pdfBytes]);
+  }, [pdfBytes, theme]);
 
   if (!pdfBytes) {
     return (
@@ -97,7 +99,7 @@ export function PdfLogPreview({ pdfBytes }) {
           width: "100%",
           minWidth: 0,
           p: { xs: 2, md: 4 },
-          bgcolor: "#f5f2ea",
+          bgcolor: (currentTheme) => currentTheme.planner.previewBackground,
           overflow: "auto",
           display: "flex",
           justifyContent: "flex-start",
