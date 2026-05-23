@@ -223,13 +223,14 @@ function drawFooter(draw, layout) {
 
 function buildLayout(dailyLog, plan) {
   const events = dailyLog.events;
+  const logDate = dailyLog.date;
   const segments = [];
   const connectors = [];
   let previousSegment = null;
 
   for (const event of events) {
-    const startMinutes = minutesFromIso(event.start_at);
-    const endMinutes = minutesFromIso(event.end_at);
+    const startMinutes = minutesFromIso(event.start_at, logDate);
+    const endMinutes = minutesFromIso(event.end_at, logDate);
     const y = rowCenter(event.status);
     const x1 = minuteToX(startMinutes);
     const segment = {
@@ -374,8 +375,16 @@ function minuteToX(minute) {
   return Math.round((GRID_LEFT + (bounded / MINUTES_PER_DAY) * GRID_WIDTH) * 100) / 100;
 }
 
-function minutesFromIso(timestamp) {
-  return Number(timestamp.slice(11, 13)) * 60 + Number(timestamp.slice(14, 16));
+function minutesFromIso(timestamp, logDate) {
+  const totalMinutes = Number(timestamp.slice(11, 13)) * 60 + Number(timestamp.slice(14, 16));
+  if (!logDate) {
+    return totalMinutes;
+  }
+
+  const baseDate = new Date(`${logDate}T00:00:00Z`);
+  const eventDate = new Date(`${timestamp.slice(0, 10)}T00:00:00Z`);
+  const dayOffset = Math.round((eventDate - baseDate) / (1000 * 60 * 60 * 24));
+  return dayOffset * MINUTES_PER_DAY + totalMinutes;
 }
 
 function formatTime(timestamp) {

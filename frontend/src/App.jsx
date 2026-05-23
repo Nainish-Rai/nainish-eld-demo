@@ -343,13 +343,11 @@ function App() {
                     isFinalInputStep={isFinalInputStep}
                     isSubmitting={isSubmitting}
                     locationPreviewStops={locationPreviewStops}
-                    selectedPlaces={selectedPlaces}
                     onContinue={goToNextStep}
                     onDeparturePreset={applyDeparturePreset}
                     onFieldChange={handleFieldChange}
                     onRequestCurrentLocationBias={requestCurrentLocationBias}
                     onResolvedLocation={handleResolvedLocation}
-                    onSetField={updateField}
                     onSubmit={handleSubmit}
                   />
                 </Box>
@@ -373,10 +371,8 @@ function App() {
                     <DriverInputFlow
                       activeStep={activeInputStep}
                       formValues={formValues}
-                      selectedPlaces={selectedPlaces}
                       currentLocationBias={currentLocationBias}
                       onFieldChange={handleFieldChange}
-                      onSetField={updateField}
                       onResolvedLocation={handleResolvedLocation}
                       onRequestCurrentLocationBias={requestCurrentLocationBias}
                       onStepChange={(stepIndex) => {

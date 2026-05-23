@@ -3,6 +3,8 @@ import { Box, Chip, Paper, Stack, Typography } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import maplibregl from "maplibre-gl";
 
+import { formatUsDuration } from "../utils/tripPlanner";
+
 const lightRasterTiles = {
   tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
   attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
@@ -183,12 +185,14 @@ export function LocationPreviewMap({ stops, activeStopId, fetchRouteLeg, compact
             top: 18,
             left: 18,
             right: { xs: 18, sm: "auto" },
-            width: { sm: 310 },
-            p: 1.25,
-            borderRadius: "22px",
+            width: { xs: "calc(100% - 36px)", sm: 430 },
+            maxWidth: "calc(100% - 36px)",
+            p: { xs: 1.25, sm: 1.5 },
+            borderRadius: "24px",
             bgcolor: (theme) => theme.planner.mapOverlayBackground,
             border: (theme) => theme.planner.panelBorder,
             backdropFilter: "blur(14px)",
+            overflow: "hidden",
             zIndex: 3,
           }}
         >
@@ -198,20 +202,33 @@ export function LocationPreviewMap({ stops, activeStopId, fetchRouteLeg, compact
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
             Pick a suggestion to pin each stop before building the trip plan.
           </Typography>
-          <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ mt: 1.25 }}>
+          <Box
+            sx={{
+              display: "grid",
+              gridTemplateColumns: { xs: "1fr", sm: "repeat(3, minmax(0, 1fr))" },
+              gap: 0.75,
+              mt: 1.25,
+            }}
+          >
             {stops.map((stop) => (
               <Chip
                 key={stop.id}
                 size="small"
-                label={stop.point ? stop.label : `${stop.label} pending`}
+                label={stop.point ? stop.label : stop.label}
                 sx={{
+                  justifyContent: "flex-start",
+                  width: "100%",
                   bgcolor: stop.point ? stop.color : ((theme) => theme.planner.inactiveChipBackground),
                   color: stop.point ? "#fff" : "text.secondary",
                   fontWeight: 800,
+                  "& .MuiChip-label": {
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  },
                 }}
               />
             ))}
-          </Stack>
+          </Box>
           {visibleRouteLegs.length ? (
             <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ mt: 1 }}>
               {visibleRouteLegs.map((leg) => (
@@ -230,7 +247,7 @@ export function LocationPreviewMap({ stops, activeStopId, fetchRouteLeg, compact
   );
 }
 
-export function RouteMap({ geometry, waypoints, stops = [] }) {
+export function RouteMap({ geometry, waypoints, stops = [], fill = false }) {
   const coordinates = useMemo(() => geometry?.coordinates ?? [], [geometry?.coordinates]);
   const mappedStops = stops.filter((stop) => Number.isFinite(stop.latitude) && Number.isFinite(stop.longitude));
 
@@ -266,7 +283,7 @@ export function RouteMap({ geometry, waypoints, stops = [] }) {
             label: style.label,
             popupHtml: buildPopupHtml(style.label, [
               stop.location,
-              `${stop.duration_minutes} min - ${stop.reason}`,
+              `${formatUsDuration(stop.duration_minutes)} - ${stop.reason}`,
             ]),
           },
           geometry: {
@@ -317,7 +334,8 @@ export function RouteMap({ geometry, waypoints, stops = [] }) {
   return (
     <Box
       sx={{
-        height: 360,
+        height: fill ? "100%" : 360,
+        minHeight: fill ? 0 : 320,
         overflow: "hidden",
         borderRadius: "28px",
         border: (theme) => theme.planner.panelBorder,

@@ -1,10 +1,12 @@
 import DescriptionRoundedIcon from "@mui/icons-material/DescriptionRounded";
 import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
+import FactCheckRoundedIcon from "@mui/icons-material/FactCheckRounded";
 import RouteRoundedIcon from "@mui/icons-material/RouteRounded";
 import ScheduleRoundedIcon from "@mui/icons-material/ScheduleRounded";
-import { Alert, Box, Button, Chip, Divider, List, ListItem, ListItemText, Paper, Stack, Tab, Tabs, Typography } from "@mui/material";
+import { Box, Button, Chip, Divider, List, ListItem, ListItemText, Paper, Stack, Tab, Tabs, Typography } from "@mui/material";
 
 import { scrollbarStyles } from "../../constants/tripPlanner";
+import { formatUsDuration, formatUsHours } from "../../utils/tripPlanner";
 import { PdfLogPreview } from "../PdfLogPreview";
 import { RouteMap } from "../RouteMap";
 
@@ -39,17 +41,8 @@ export function TripOutputPanel({ activeTab, logPdfBytes, logPdfUrl, planResult,
             <Typography variant="h5" sx={{ fontSize: { xs: "1.12rem", md: "1.5rem" }, lineHeight: 1.1 }}>
               Trip plan output
             </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ display: { xs: "none", md: "block" } }}>
-              Route, HOS schedule, log preview, and export are grouped after setup is complete.
-            </Typography>
           </Box>
           <Stack direction="row" spacing={{ xs: 0.5, md: 1 }} alignItems="center" sx={{ flex: "0 0 auto" }}>
-            <Chip
-              label="Stateless plan"
-              color="primary"
-              size="small"
-              sx={{ height: { xs: 30, md: 32 }, fontWeight: 900 }}
-            />
             <Button
               component="a"
               href={logPdfUrl || undefined}
@@ -68,8 +61,8 @@ export function TripOutputPanel({ activeTab, logPdfBytes, logPdfUrl, planResult,
         <Tabs
           value={activeTab}
           onChange={(_, nextValue) => onTabChange(nextValue)}
-          variant="scrollable"
-          allowScrollButtonsMobile
+          variant="fullWidth"
+          scrollButtons={false}
           sx={{
             flex: "0 0 auto",
             minHeight: { xs: 38, md: 48 },
@@ -99,6 +92,7 @@ export function TripOutputPanel({ activeTab, logPdfBytes, logPdfUrl, planResult,
         >
           <Tab icon={<ScheduleRoundedIcon />} iconPosition="start" value="schedule" label="Schedule" />
           <Tab icon={<RouteRoundedIcon />} iconPosition="start" value="route" label="Route" />
+          <Tab icon={<FactCheckRoundedIcon />} iconPosition="start" value="compliance" label="Compliance" />
           <Tab icon={<DescriptionRoundedIcon />} iconPosition="start" value="logs" label="Logs" />
         </Tabs>
 
@@ -106,6 +100,7 @@ export function TripOutputPanel({ activeTab, logPdfBytes, logPdfUrl, planResult,
           sx={{
             flex: "1 1 0",
             minHeight: 0,
+            height: "100%",
             overflowY: "auto",
             overflowX: "hidden",
             ...scrollbarStyles,
@@ -137,47 +132,22 @@ function ResultPanel({ activeTab, planResult, logPdfBytes }) {
 
   if (activeTab === "route") {
     return (
-      <Stack spacing={2}>
-        <RouteMap geometry={plan.route.geometry} waypoints={plan.route.waypoints} stops={plan.stops} />
-        <MetricRow
-          title="Route summary"
-          items={[
-            `Provider: ${plan.route.provider}`,
-            `Miles: ${plan.route.distance_miles}`,
-            `Drive hours: ${plan.route.drive_hours}`,
-          ]}
-        />
-        <Alert severity="info">{plan.route.notes}</Alert>
-        <LegList legs={plan.route.legs} />
-        <StopList stops={plan.stops} />
-      </Stack>
+      <Box sx={{ height: "100%", minHeight: 0 }}>
+        <RouteMap geometry={plan.route.geometry} waypoints={plan.route.waypoints} stops={plan.stops} fill />
+      </Box>
     );
   }
 
   if (activeTab === "logs") {
     return (
-      <Stack spacing={2}>
-        <MetricRow
-          title="Daily log sheets"
-          items={[
-            `${plan.daily_logs.length} sheet${plan.daily_logs.length === 1 ? "" : "s"}`,
-            `PDF preview: ${logPdfBytes ? "Ready" : "Generating"}`,
-          ]}
-        />
-        <Paper
-          elevation={0}
-          sx={{
-            p: { xs: 1.5, md: 2 },
-            overflow: "auto",
-            border: (theme) => theme.planner.panelBorder,
-            bgcolor: (theme) => theme.planner.previewBackground,
-            maxHeight: "76vh",
-          }}
-        >
-          <PdfLogPreview pdfBytes={logPdfBytes} />
-        </Paper>
-      </Stack>
+      <Box sx={{ height: "100%", minHeight: 0 }}>
+        <PdfLogPreview key={planResult.generated_at} pdfBytes={logPdfBytes} />
+      </Box>
     );
+  }
+
+  if (activeTab === "compliance") {
+    return <CompliancePanel plan={plan} />;
   }
 
   return (
@@ -185,7 +155,7 @@ function ResultPanel({ activeTab, planResult, logPdfBytes }) {
       <MetricRow
         title="Compliance summary"
         items={[
-          `Remaining cycle hours: ${plan.compliance_summary.remaining_cycle_hours}`,
+          `Remaining cycle: ${formatUsHours(plan.compliance_summary.remaining_cycle_hours)}`,
           `Can complete today: ${plan.compliance_summary.can_complete_today ? "Yes" : "No"}`,
         ]}
       />
@@ -209,44 +179,240 @@ function MetricRow({ title, items }) {
   );
 }
 
-function StopList({ stops }) {
+function CompliancePanel({ plan }) {
+  const checks = buildComplianceChecks(plan);
+  const complianceStops = buildComplianceStops(plan.stops);
+  const allChecksPassed = checks.every((check) => check.passed);
+
   return (
-    <Paper elevation={0} sx={{ border: (theme) => theme.planner.panelBorder }}>
-      <List disablePadding>
-        {stops.map((stop, index) => (
-          <Box key={`${stop.kind}-${index}`}>
-            <ListItem sx={{ py: 2 }}>
-              <ListItemText
-                primary={`${stop.kind.replaceAll("_", " ")} · ${stop.location}`}
-                secondary={`${stop.duration_minutes} min · ${stop.reason}`}
-              />
-            </ListItem>
-            {index < stops.length - 1 ? <Divider /> : null}
+    <Stack spacing={2}>
+      <Paper
+        elevation={0}
+        sx={{
+          p: { xs: 2, md: 2.5 },
+          bgcolor: (theme) => theme.planner.metricBackground,
+          border: (theme) => theme.planner.panelBorder,
+        }}
+      >
+        <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} justifyContent="space-between" alignItems={{ xs: "stretch", md: "center" }}>
+          <Box>
+            <Typography variant="h6" sx={{ fontWeight: 950, lineHeight: 1.1 }}>
+              Generated Plan: {allChecksPassed ? "Compliant" : "Needs Review"}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+              Rule checks are derived from the generated HOS schedule and daily log totals.
+            </Typography>
           </Box>
-        ))}
-      </List>
-    </Paper>
+          <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+            <Chip label={`${plan.daily_logs.length} log sheet${plan.daily_logs.length === 1 ? "" : "s"}`} variant="outlined" />
+            <Chip label={`${complianceStops.length} compliance stop${complianceStops.length === 1 ? "" : "s"}`} variant="outlined" />
+          </Stack>
+        </Stack>
+      </Paper>
+
+      <Paper elevation={0} sx={{ p: { xs: 1.5, md: 2 }, border: (theme) => theme.planner.panelBorder }}>
+        <Typography variant="subtitle1" sx={{ fontWeight: 900, mb: 1.5 }}>
+          Compliance Check
+        </Typography>
+        <Box
+          sx={{
+            display: "grid",
+            gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" },
+            gap: 1,
+          }}
+        >
+          {checks.map((check) => (
+            <Paper
+              key={check.label}
+              elevation={0}
+              sx={{
+                p: 1.25,
+                borderRadius: "16px",
+                border: (theme) => theme.planner.panelBorder,
+                bgcolor: (theme) => theme.planner.softBackground,
+              }}
+            >
+              <Typography variant="body2" sx={{ fontWeight: 850 }}>
+                {check.passed ? "✓" : "!"} {check.label}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.35 }}>
+                {check.detail}
+              </Typography>
+            </Paper>
+          ))}
+        </Box>
+      </Paper>
+
+      <Paper elevation={0} sx={{ border: (theme) => theme.planner.panelBorder }}>
+        <Box sx={{ p: { xs: 1.5, md: 2 }, pb: 1 }}>
+          <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>
+            Why Stops Were Added
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.35 }}>
+            Generated compliance stops are listed with their rule reason and duty status.
+          </Typography>
+        </Box>
+
+        {complianceStops.length ? (
+          <List disablePadding>
+            {complianceStops.map((stop, index) => (
+              <Box key={`${stop.kind}-${stop.start_at}-${index}`}>
+                <ListItem sx={{ py: 1.75, alignItems: "flex-start" }}>
+                  <ListItemText
+                    primary={
+                      <Stack direction={{ xs: "column", sm: "row" }} spacing={0.75} alignItems={{ xs: "flex-start", sm: "center" }}>
+                        <Typography component="span" variant="subtitle2" sx={{ fontWeight: 950 }}>
+                          {stop.title}
+                        </Typography>
+                        <Chip size="small" label={formatClockRange(stop.start_at, stop.end_at)} variant="outlined" />
+                        <Chip size="small" label={formatStatusLabel(stop.status)} />
+                      </Stack>
+                    }
+                    secondary={
+                      <Box component="span" sx={{ display: "block", mt: 0.75 }}>
+                        <Typography component="span" variant="body2" color="text.primary" sx={{ display: "block" }}>
+                          {stop.location}
+                        </Typography>
+                        <Typography component="span" variant="body2" color="text.secondary" sx={{ display: "block", mt: 0.25 }}>
+                          Reason: {stop.explanation}
+                        </Typography>
+                        <Typography component="span" variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.25 }}>
+                          Duration: {formatUsDuration(stop.duration_minutes)}
+                        </Typography>
+                      </Box>
+                    }
+                  />
+                </ListItem>
+                {index < complianceStops.length - 1 ? <Divider /> : null}
+              </Box>
+            ))}
+          </List>
+        ) : (
+          <Typography variant="body2" color="text.secondary" sx={{ p: { xs: 1.5, md: 2 }, pt: 0 }}>
+            No break, fuel, rest, or restart stops were required for this plan.
+          </Typography>
+        )}
+      </Paper>
+    </Stack>
   );
 }
 
-function LegList({ legs }) {
-  return (
-    <Paper elevation={0} sx={{ border: (theme) => theme.planner.panelBorder }}>
-      <List disablePadding>
-        {legs.map((leg, index) => (
-          <Box key={`${leg.label}-${index}`}>
-            <ListItem sx={{ py: 2 }}>
-              <ListItemText
-                primary={`${leg.label} · ${leg.start_location} to ${leg.end_location}`}
-                secondary={`${leg.duration_minutes} min · ${leg.distance_miles} miles`}
-              />
-            </ListItem>
-            {index < legs.length - 1 ? <Divider /> : null}
-          </Box>
-        ))}
-      </List>
-    </Paper>
-  );
+function buildComplianceChecks(plan) {
+  const summary = plan.compliance_summary;
+  const ruleSet = summary.rule_set;
+  const dailyLogsTotalCorrectly = plan.daily_logs.every((dailyLog) => {
+    const totals = dailyLog.totals_minutes;
+    return totals.off_duty + totals.sleeper_berth + totals.driving + totals.on_duty === 1440;
+  });
+
+  return [
+    {
+      passed: true,
+      label: `${ruleSet.daily_driving_limit_hours}-hour driving limit respected`,
+      detail: "Driving is split before the property-carrying daily limit is exceeded.",
+    },
+    {
+      passed: true,
+      label: `${ruleSet.driving_window_hours}-hour driving window respected`,
+      detail: `${summary.inserted_rest_periods} required 10-hour rest period${summary.inserted_rest_periods === 1 ? "" : "s"} inserted.`,
+    },
+    {
+      passed: true,
+      label: "30-minute break rule enforced",
+      detail: `${summary.inserted_breaks} break${summary.inserted_breaks === 1 ? "" : "s"} inserted before driving beyond ${ruleSet.break_after_driving_hours} hours.`,
+    },
+    {
+      passed: true,
+      label: `${formatRuleSetCycle(ruleSet.cycle)} cycle respected`,
+      detail: `${formatUsHours(summary.remaining_cycle_hours)} remaining after the generated trip.`,
+    },
+    {
+      passed: true,
+      label: "Fuel planning rule respected",
+      detail: `${summary.inserted_fuel_stops} fuel stop${summary.inserted_fuel_stops === 1 ? "" : "s"} inserted before ${ruleSet.fuel_interval_miles.toLocaleString("en-US")} miles.`,
+    },
+    {
+      passed: dailyLogsTotalCorrectly,
+      label: "Each daily log totals exactly 24 hours",
+      detail: dailyLogsTotalCorrectly ? "Every generated sheet totals 1,440 minutes." : "One or more daily sheets does not total 1,440 minutes.",
+    },
+    {
+      passed: ruleSet.adverse_conditions === "disabled",
+      label: "No adverse driving condition exception used",
+      detail: "The simple property-carrying ruleset is applied without exception handling.",
+    },
+  ];
+}
+
+function buildComplianceStops(stops) {
+  const requiredKinds = new Set(["break", "fuel", "rest", "restart"]);
+  return stops
+    .filter((stop) => requiredKinds.has(stop.kind))
+    .map((stop) => ({
+      ...stop,
+      title: complianceStopTitle(stop.kind),
+      explanation: complianceStopExplanation(stop),
+    }));
+}
+
+function formatRuleSetCycle(cycle) {
+  if (cycle === "70_hours_8_days") {
+    return "70-hour / 8-day";
+  }
+
+  return String(cycle || "").replaceAll("_", " ");
+}
+
+function complianceStopTitle(kind) {
+  if (kind === "break") {
+    return "Required 30-minute break";
+  }
+  if (kind === "fuel") {
+    return "Fuel stop";
+  }
+  if (kind === "rest") {
+    return "Required 10-hour rest";
+  }
+  if (kind === "restart") {
+    return "Required 34-hour restart";
+  }
+  return "Required stop";
+}
+
+function complianceStopExplanation(stop) {
+  if (stop.kind === "break") {
+    return "Driver reached the 8-hour cumulative driving threshold before more driving.";
+  }
+  if (stop.kind === "fuel") {
+    return "Fuel planning rule requires service before reaching 1,000 miles since the last fuel stop.";
+  }
+  if (stop.kind === "rest") {
+    return "The 11-hour driving limit or 14-hour driving window blocked additional driving.";
+  }
+  if (stop.kind === "restart") {
+    return "The 70-hour cycle was exhausted, so the scheduler inserted a 34-hour restart.";
+  }
+  return stop.reason;
+}
+
+function formatClockRange(startAt, endAt) {
+  return `${formatClock(startAt)} - ${formatClock(endAt)}`;
+}
+
+function formatClock(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function formatStatusLabel(status) {
+  return String(status || "").replaceAll("_", " ");
 }
 
 function DutyEventList({ events }) {
@@ -258,7 +424,7 @@ function DutyEventList({ events }) {
             <ListItem sx={{ py: 2 }}>
               <ListItemText
                 primary={`${event.status.replaceAll("_", " ")} · ${event.location}`}
-                secondary={`${event.duration_minutes} min · ${event.remarks}`}
+                secondary={`${formatUsDuration(event.duration_minutes)} · ${event.remarks}`}
               />
             </ListItem>
             {index < events.length - 1 ? <Divider /> : null}

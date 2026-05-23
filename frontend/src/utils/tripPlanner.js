@@ -134,11 +134,11 @@ export function buildLocationPreviewStops(formValues, selectedPlaces) {
 
 export function formatStepPreview(step, value) {
   if (step.id === "departure_at") {
-    return formatReadableDateTime(value) || "Not set";
+    return formatUsDateTime(value) || "Not set";
   }
 
   if (step.id === "current_cycle_used_hours") {
-    return value ? `${value} hours used` : "Not set";
+    return value ? `${formatUsHours(value)} used` : "Not set";
   }
 
   return value || "Not set";
@@ -151,7 +151,7 @@ export function formatDateTimeLocal(date) {
   )}`;
 }
 
-export function formatReadableDateTime(value) {
+export function formatUsDateTime(value) {
   if (!value) {
     return "";
   }
@@ -161,12 +161,57 @@ export function formatReadableDateTime(value) {
     return value;
   }
 
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat("en-US", {
     month: "short",
     day: "numeric",
+    year: "numeric",
     hour: "numeric",
     minute: "2-digit",
   }).format(date);
+}
+
+export function formatUsHours(value) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return `${value} hr`;
+  }
+
+  return `${numericValue.toLocaleString("en-US", {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: numericValue % 1 === 0 ? 0 : 1,
+  })} hr`;
+}
+
+export function formatUsMiles(value) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return `${value} mi`;
+  }
+
+  return `${numericValue.toLocaleString("en-US", {
+    maximumFractionDigits: 1,
+  })} mi`;
+}
+
+export function formatUsDuration(minutes) {
+  const numericMinutes = Number(minutes);
+  if (!Number.isFinite(numericMinutes)) {
+    return `${minutes} min`;
+  }
+
+  const roundedMinutes = Math.round(numericMinutes);
+  const hours = Math.floor(roundedMinutes / 60);
+  const remainingMinutes = roundedMinutes % 60;
+
+  if (hours === 0) {
+    return `${remainingMinutes} min`;
+  }
+
+  if (remainingMinutes === 0) {
+    return `${hours} hr`;
+  }
+
+  return `${hours} hr ${remainingMinutes} min`;
 }
 
 export function buildLocationCoordinatePayload(selectedPlaces) {

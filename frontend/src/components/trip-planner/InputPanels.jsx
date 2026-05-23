@@ -3,8 +3,8 @@ import ArrowForwardRoundedIcon from "@mui/icons-material/ArrowForwardRounded";
 import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
 import { Alert, Autocomplete, Box, Button, Chip, CircularProgress, LinearProgress, ListItemText, Paper, Stack, TextField, Typography } from "@mui/material";
 
-import { fetchPreviewRouteLeg, geoapifyApiKey, searchLocationSuggestions } from "../../api";
-import { chipButtonStyles, cycleHourPresets, inputSteps, largeFieldStyles } from "../../constants/tripPlanner";
+import { fetchPreviewRouteLeg, searchLocationSuggestions } from "../../api";
+import { chipButtonStyles, inputSteps, largeFieldStyles } from "../../constants/tripPlanner";
 import { formatStepPreview } from "../../utils/tripPlanner";
 import { LocationPreviewMap } from "../RouteMap";
 
@@ -17,13 +17,11 @@ export function MobileSetupMapPanel({
   isFinalInputStep,
   isSubmitting,
   locationPreviewStops,
-  selectedPlaces,
   onContinue,
   onDeparturePreset,
   onFieldChange,
   onRequestCurrentLocationBias,
   onResolvedLocation,
-  onSetField,
   onSubmit,
 }) {
   const progressValue = ((activeStep + 1) / inputSteps.length) * 100;
@@ -64,11 +62,6 @@ export function MobileSetupMapPanel({
                 {activeStepData.title}
               </Typography>
             </Box>
-            <Chip
-              size="small"
-              label={`${Math.round(progressValue)}%`}
-              sx={{ bgcolor: (theme) => theme.planner.tabRailBackground, color: "primary.main", fontWeight: 900 }}
-            />
           </Stack>
 
           <LinearProgress variant="determinate" value={progressValue} sx={{ height: 7, borderRadius: 99 }} />
@@ -76,10 +69,8 @@ export function MobileSetupMapPanel({
           <StepInlineInput
             step={activeStepData}
             formValues={formValues}
-            selectedPlaces={selectedPlaces}
             currentLocationBias={currentLocationBias}
             onFieldChange={onFieldChange}
-            onSetField={onSetField}
             onResolvedLocation={onResolvedLocation}
             onRequestCurrentLocationBias={onRequestCurrentLocationBias}
             onDeparturePreset={onDeparturePreset}
@@ -120,10 +111,8 @@ export function MobileSetupMapPanel({
 export function DriverInputFlow({
   activeStep,
   formValues,
-  selectedPlaces,
   currentLocationBias,
   onFieldChange,
-  onSetField,
   onResolvedLocation,
   onRequestCurrentLocationBias,
   onStepChange,
@@ -138,18 +127,12 @@ export function DriverInputFlow({
         <Typography variant="h5" sx={{ fontSize: "1.12rem" }}>
           Trip setup
         </Typography>
-        <Typography variant="caption" color="text.secondary">
-          {Math.round(progressValue)}% complete
-        </Typography>
       </Stack>
 
       <Box>
         <Stack direction="row" justifyContent="space-between" sx={{ mb: 0.8 }}>
           <Typography variant="caption" color="text.secondary">
             Step {activeStep + 1} of {inputSteps.length}
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            {Math.round(progressValue)}%
           </Typography>
         </Stack>
         <LinearProgress variant="determinate" value={progressValue} sx={{ height: 8, borderRadius: 99 }} />
@@ -247,10 +230,8 @@ export function DriverInputFlow({
                     <StepInlineInput
                       step={item}
                       formValues={formValues}
-                      selectedPlaces={selectedPlaces}
                       currentLocationBias={currentLocationBias}
                       onFieldChange={onFieldChange}
-                      onSetField={onSetField}
                       onResolvedLocation={onResolvedLocation}
                       onRequestCurrentLocationBias={onRequestCurrentLocationBias}
                       onDeparturePreset={onDeparturePreset}
@@ -270,10 +251,8 @@ export function DriverInputFlow({
 function StepInlineInput({
   step,
   formValues,
-  selectedPlaces,
   currentLocationBias,
   onFieldChange,
-  onSetField,
   onResolvedLocation,
   onRequestCurrentLocationBias,
   onDeparturePreset,
@@ -283,24 +262,16 @@ function StepInlineInput({
 
   return (
     <Box sx={{ pt: 1 }}>
-      <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.8, lineHeight: 1.3 }}>
-        {step.helper}
-      </Typography>
-
       {isLocationStep ? (
         <Stack spacing={0.75}>
           <LocationSuggestField
             name={step.id}
             value={formValues[step.id]}
-            selectedPlace={selectedPlaces[step.id]}
             currentLocationBias={currentLocationBias}
             onChange={(payload) => onResolvedLocation(step.id, payload)}
             onRequestCurrentLocationBias={onRequestCurrentLocationBias}
             placeholder={step.placeholder}
           />
-          <Typography variant="caption" color="text.secondary">
-            Choose a suggestion to place the pin and continue.
-          </Typography>
         </Stack>
       ) : null}
 
@@ -347,11 +318,6 @@ function StepInlineInput({
             fullWidth
             sx={largeFieldStyles}
           />
-          <QuickChipGroup
-            label="Common"
-            items={cycleHourPresets.map((item) => ({ id: item, label: item, shortLabel: item }))}
-            onSelect={(option) => onSetField("current_cycle_used_hours", option.label)}
-          />
         </Stack>
       ) : null}
     </Box>
@@ -361,7 +327,6 @@ function StepInlineInput({
 function LocationSuggestField({
   name,
   value,
-  selectedPlace,
   currentLocationBias,
   onChange,
   onRequestCurrentLocationBias,
@@ -373,23 +338,10 @@ function LocationSuggestField({
   const [suggestionError, setSuggestionError] = useState("");
   const canSearch = String(value || "").trim().length >= 3;
   const biasPoint = name === "current_location" ? currentLocationBias.point : null;
-  const usingNearbyBias = name === "current_location" && currentLocationBias.status === "ready" && biasPoint;
-  let helperText = "Start typing and choose the closest address or place.";
+  let helperText = "";
 
-  if (!geoapifyApiKey) {
-    helperText = "Set VITE_GEOAPIFY_API_KEY to enable live location suggestions.";
-  } else if (canSearch && suggestionError) {
+  if (canSearch && suggestionError) {
     helperText = suggestionError;
-  } else if (selectedPlace) {
-    helperText = "Geoapify match selected. Trip planning will reuse these coordinates.";
-  } else if (usingNearbyBias) {
-    helperText = "Using nearby results for your current location.";
-  } else if (name === "current_location" && currentLocationBias.status === "requesting") {
-    helperText = "Checking your current location for nearby results.";
-  } else if (name === "current_location" && currentLocationBias.status === "denied") {
-    helperText = "Location access is off. You can still type your current location.";
-  } else if (name === "current_location" && currentLocationBias.status === "unavailable") {
-    helperText = "This device cannot share location. You can still type your current location.";
   }
 
   useEffect(() => {
@@ -480,7 +432,7 @@ function LocationSuggestField({
           placeholder={placeholder}
           required
           fullWidth
-          helperText={helperText}
+          helperText={helperText || undefined}
           sx={largeFieldStyles}
         />
       )}
@@ -500,28 +452,5 @@ function LocationSuggestField({
       }}
       selectOnFocus
     />
-  );
-}
-
-function QuickChipGroup({ label, emptyLabel, items, onSelect }) {
-  if (!items.length) {
-    return (
-      <Typography variant="caption" color="text.secondary">
-        {emptyLabel}
-      </Typography>
-    );
-  }
-
-  return (
-    <Box>
-      <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.8 }}>
-        {label}
-      </Typography>
-      <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-        {items.map((item) => (
-          <Chip key={item.id || item.label} label={item.shortLabel || item.label} onClick={() => onSelect(item)} sx={chipButtonStyles} />
-        ))}
-      </Stack>
-    </Box>
   );
 }

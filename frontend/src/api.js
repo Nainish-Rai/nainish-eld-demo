@@ -36,6 +36,7 @@ export async function searchLocationSuggestions(query, { signal, bias } = {}) {
 
   const params = new URLSearchParams({
     apiKey: geoapifyApiKey,
+    filter: "countrycode:us",
     format: "json",
     limit: "5",
     text: cleanedQuery,
