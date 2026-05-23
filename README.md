@@ -65,6 +65,13 @@ For a fast review, look at these paths first:
 | Backend tests | `backend/trips/tests.py` |
 | Design notes | `docs/plans/2026-05-19-hos-trip-planner-design.md` |
 
+
+## Screenshots 
+
+<img width="1460" height="805" alt="image" src="https://github.com/user-attachments/assets/a3001894-5b3f-45b6-99cb-64738a429e64" />
+<img width="1468" height="806" alt="image" src="https://github.com/user-attachments/assets/9406ca06-b2c9-4c12-8cc9-7ac586c01799" />
+
+
 ## Requirements
 
 - Python 3.11+
