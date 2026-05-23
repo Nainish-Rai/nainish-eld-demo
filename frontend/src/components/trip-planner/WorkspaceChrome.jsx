@@ -27,7 +27,7 @@ export function AppHeader({ colorMode, onToggleColorMode }) {
           <LocalShippingRoundedIcon fontSize="small" />
         </Box>
         <Box>
-          <Typography variant="h6" sx={{ fontSize: { xs: "1.05rem", md: "1.25rem" }, fontWeight: 900 }}>
+          <Typography variant="h6" sx={{ fontSize: { xs: "1.05rem", md: "1.25rem" } }}>
             Spotter AI
           </Typography>
           <Typography
@@ -35,9 +35,9 @@ export function AppHeader({ colorMode, onToggleColorMode }) {
             color="text.secondary"
             sx={{
               display: "block",
-              mt: { xs: -0.4, md: -0.25 },
-              fontSize: { xs: "0.68rem", md: "0.75rem" },
-              lineHeight: { xs: 1.15, md: 1.4 },
+              mt: { xs: -0.3, md: -0.2 },
+              fontSize: { xs: "0.7rem", md: "0.76rem" },
+              lineHeight: { xs: 1.25, md: 1.4 },
             }}
           >
             Pin stops, build a compliant route, and export driver-ready ELD logs.
@@ -87,7 +87,7 @@ export function MobileWorkspaceTabs({ value, hasPlan, onChange }) {
             borderRadius: "12px",
             color: "text.secondary",
             fontSize: "0.82rem",
-            fontWeight: 900,
+            fontWeight: 700,
             textTransform: "none",
             transition: "transform 160ms cubic-bezier(0.32, 0.72, 0, 1), background-color 160ms ease-out, color 160ms ease-out",
           },

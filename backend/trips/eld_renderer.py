@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 from html import escape
 from io import BytesIO
@@ -412,13 +413,14 @@ def _draw_pdf_text(pdf: canvas.Canvas, x: float, y: float, text: str, font_size:
 
 def _build_layout(daily_log: dict, plan_data: dict) -> dict:
     events = daily_log["events"]
+    log_date = daily_log["date"]
     segments = []
     connectors = []
     previous_segment = None
 
     for event in events:
-        start_minutes = _minutes_from_iso(event["start_at"])
-        end_minutes = _minutes_from_iso(event["end_at"])
+        start_minutes = _minutes_from_iso(event["start_at"], log_date)
+        end_minutes = _minutes_from_iso(event["end_at"], log_date)
         row_y = _row_center(event["status"])
         segment = {
             "status": event["status"],
@@ -615,10 +617,16 @@ def _minute_to_x(minute: int) -> float:
     return round(GRID_LEFT + (bounded / MINUTES_PER_DAY) * GRID_WIDTH, 2)
 
 
-def _minutes_from_iso(timestamp: str) -> int:
+def _minutes_from_iso(timestamp: str, log_date: str | None = None) -> int:
     hour = int(timestamp[11:13])
     minute = int(timestamp[14:16])
-    return hour * 60 + minute
+    total_minutes = hour * 60 + minute
+    if not log_date:
+        return total_minutes
+
+    base_date = date.fromisoformat(log_date)
+    timestamp_date = date.fromisoformat(timestamp[:10])
+    return (timestamp_date - base_date).days * MINUTES_PER_DAY + total_minutes
 
 
 def _format_time(timestamp: str) -> str:

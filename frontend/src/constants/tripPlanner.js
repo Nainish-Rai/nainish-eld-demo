@@ -58,13 +58,15 @@ export const recentStorageKey = "spotter_recent_trip_inputs";
 export const largeFieldStyles = {
   "& .MuiInputBase-root": {
     minHeight: 48,
-    fontSize: "0.95rem",
+    fontSize: "0.96rem",
+    lineHeight: 1.45,
   },
   "& .MuiInputLabel-root": {
     fontSize: "0.92rem",
+    fontWeight: 500,
   },
   "& .MuiFormHelperText-root": {
-    lineHeight: 1.25,
+    lineHeight: 1.45,
     marginTop: 0.5,
   },
 };
@@ -72,7 +74,7 @@ export const largeFieldStyles = {
 export const chipButtonStyles = {
   minHeight: 34,
   borderRadius: 999,
-  fontWeight: 700,
+  fontWeight: 600,
   "& .MuiChip-label": {
     px: 1.1,
   },

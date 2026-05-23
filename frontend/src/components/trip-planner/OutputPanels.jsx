@@ -38,7 +38,7 @@ export function TripOutputPanel({ activeTab, logPdfBytes, logPdfUrl, planResult,
           }}
         >
           <Box sx={{ minWidth: 0 }}>
-            <Typography variant="h5" sx={{ fontSize: { xs: "1.12rem", md: "1.5rem" }, lineHeight: 1.1 }}>
+            <Typography variant="h5">
               Trip plan output
             </Typography>
           </Box>
@@ -72,7 +72,8 @@ export function TripOutputPanel({ activeTab, logPdfBytes, logPdfUrl, planResult,
             "& .MuiTab-root": {
               minHeight: { xs: 38, md: 48 },
               px: { xs: 1, md: 2 },
-              fontSize: { xs: "0.78rem", md: "0.875rem" },
+              fontSize: { xs: "0.78rem", md: "0.86rem" },
+              fontWeight: 600,
               transition: "transform 160ms cubic-bezier(0.32, 0.72, 0, 1), opacity 160ms ease-out",
               willChange: "transform",
             },
@@ -167,7 +168,7 @@ function ResultPanel({ activeTab, planResult, logPdfBytes }) {
 function MetricRow({ title, items }) {
   return (
     <Paper elevation={0} sx={{ p: 2.5, bgcolor: (theme) => theme.planner.metricBackground, border: (theme) => theme.planner.panelBorder }}>
-      <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1.5 }}>
+      <Typography variant="subtitle1" sx={{ mb: 1.5 }}>
         {title}
       </Typography>
       <Stack direction={{ xs: "column", md: "row" }} spacing={1}>
@@ -196,7 +197,7 @@ function CompliancePanel({ plan }) {
       >
         <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} justifyContent="space-between" alignItems={{ xs: "stretch", md: "center" }}>
           <Box>
-            <Typography variant="h6" sx={{ fontWeight: 950, lineHeight: 1.1 }}>
+            <Typography variant="h6">
               Generated Plan: {allChecksPassed ? "Compliant" : "Needs Review"}
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
@@ -211,7 +212,7 @@ function CompliancePanel({ plan }) {
       </Paper>
 
       <Paper elevation={0} sx={{ p: { xs: 1.5, md: 2 }, border: (theme) => theme.planner.panelBorder }}>
-        <Typography variant="subtitle1" sx={{ fontWeight: 900, mb: 1.5 }}>
+        <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1.5 }}>
           Compliance Check
         </Typography>
         <Box
@@ -232,7 +233,7 @@ function CompliancePanel({ plan }) {
                 bgcolor: (theme) => theme.planner.softBackground,
               }}
             >
-              <Typography variant="body2" sx={{ fontWeight: 850 }}>
+              <Typography variant="body2" sx={{ fontWeight: 700 }}>
                 {check.passed ? "✓" : "!"} {check.label}
               </Typography>
               <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.35 }}>
@@ -245,7 +246,7 @@ function CompliancePanel({ plan }) {
 
       <Paper elevation={0} sx={{ border: (theme) => theme.planner.panelBorder }}>
         <Box sx={{ p: { xs: 1.5, md: 2 }, pb: 1 }}>
-          <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>
+          <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
             Why Stops Were Added
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.35 }}>
@@ -261,7 +262,7 @@ function CompliancePanel({ plan }) {
                   <ListItemText
                     primary={
                       <Stack direction={{ xs: "column", sm: "row" }} spacing={0.75} alignItems={{ xs: "flex-start", sm: "center" }}>
-                        <Typography component="span" variant="subtitle2" sx={{ fontWeight: 950 }}>
+                        <Typography component="span" variant="subtitle2" sx={{ fontWeight: 700 }}>
                           {stop.title}
                         </Typography>
                         <Chip size="small" label={formatClockRange(stop.start_at, stop.end_at)} variant="outlined" />

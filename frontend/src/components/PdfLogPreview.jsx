@@ -136,7 +136,7 @@ export function PdfLogPreview({ pdfBytes }) {
           </Button>
         </ButtonGroup>
 
-        <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>
+        <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
           {pageCount ? `${pageNumber} of ${pageCount}` : "Loading"}
         </Typography>
 

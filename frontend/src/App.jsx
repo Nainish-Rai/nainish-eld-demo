@@ -227,7 +227,13 @@ function App() {
       <GlobalStyles
         styles={(theme) => ({
           html: { height: "100%", overflow: "hidden" },
-          body: { height: "100%", overflow: "hidden" },
+          body: {
+            height: "100%",
+            overflow: "hidden",
+            WebkitFontSmoothing: "antialiased",
+            MozOsxFontSmoothing: "grayscale",
+            textRendering: "optimizeLegibility",
+          },
           "#root": { height: "100%", overflow: "hidden" },
           "@keyframes stepReveal": {
             from: { opacity: 0, transform: "translateY(-4px) scale(0.98)" },
@@ -271,7 +277,7 @@ function App() {
           ".trip-map-popup-body": {
             marginTop: 4,
             color: theme.palette.text.secondary,
-            lineHeight: 1.35,
+            lineHeight: 1.45,
           },
           "@media (prefers-reduced-motion: reduce)": {
             "*, *::before, *::after": {
@@ -394,7 +400,7 @@ function App() {
                           isSubmitting ? <CircularProgress color="inherit" size={18} /> : <ArrowForwardRoundedIcon />
                         }
                         disabled={isSubmitting}
-                        sx={{ minHeight: 54, fontSize: "0.95rem" }}
+                        sx={{ minHeight: 54 }}
                       >
                         {isSubmitting ? "Building trip plan..." : "Build trip plan"}
                       </Button>
@@ -405,7 +411,7 @@ function App() {
                         size="large"
                         endIcon={<ArrowForwardRoundedIcon />}
                         onClick={goToNextStep}
-                        sx={{ minHeight: 54, fontSize: "0.95rem" }}
+                        sx={{ minHeight: 54 }}
                       >
                         Next
                       </Button>

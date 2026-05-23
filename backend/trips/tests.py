@@ -6,6 +6,7 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 
+from .eld_renderer import TOTALS_LEFT, _build_layout
 from .planner import RouteLeg, RouteTemplate, TripPlanningInput, build_trip_plan
 from .routing import build_live_route_template
 
@@ -155,6 +156,12 @@ class HosPlannerTests(SimpleTestCase):
         self.assertEqual(len(rest_events), 1)
         self.assertGreaterEqual(len(plan["daily_logs"]), 2)
         self.assertEqual(plan["compliance_summary"]["inserted_rest_periods"], 1)
+
+        second_day_layout = _build_layout(plan["daily_logs"][1], plan)
+        final_segment = second_day_layout["segments"][-1]
+        self.assertEqual(final_segment["status"], "off_duty")
+        self.assertEqual(final_segment["x2"], TOTALS_LEFT)
+        self.assertLess(final_segment["x1"], final_segment["x2"])
 
     def test_cycle_exhaustion_triggers_restart_warning_and_restart_event(self):
         plan = build_trip_plan(_trip_input(current_cycle_used_hours=Decimal("69.00")), route_template=_default_route_template())

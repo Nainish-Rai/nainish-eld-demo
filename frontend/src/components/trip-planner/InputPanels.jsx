@@ -43,22 +43,22 @@ export function MobileSetupMapPanel({
           right: { xs: 10, sm: 16 },
           bottom: { xs: 10, sm: 16 },
           zIndex: 500,
-            p: { xs: 1.25, sm: 1.5 },
-            borderRadius: "24px",
-            bgcolor: (theme) => theme.planner.overlayBackground,
-            border: (theme) => theme.planner.overlayBorder,
-            boxShadow: (theme) => theme.planner.overlayShadow,
-            backdropFilter: "blur(18px)",
-            animation: "stepReveal 180ms cubic-bezier(0.32, 0.72, 0, 1)",
-          }}
+          p: { xs: 1.25, sm: 1.5 },
+          borderRadius: "24px",
+          bgcolor: (theme) => theme.planner.overlayBackground,
+          border: (theme) => theme.planner.overlayBorder,
+          boxShadow: (theme) => theme.planner.overlayShadow,
+          backdropFilter: "blur(18px)",
+          animation: "stepReveal 180ms cubic-bezier(0.32, 0.72, 0, 1)",
+        }}
       >
         <Stack spacing={1.1}>
           <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
             <Box sx={{ minWidth: 0 }}>
-              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 800 }}>
+              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
                 Step {activeStep + 1} of {inputSteps.length}
               </Typography>
-              <Typography variant="h6" sx={{ fontWeight: 950, lineHeight: 1.08 }}>
+              <Typography variant="h6">
                 {activeStepData.title}
               </Typography>
             </Box>
@@ -86,7 +86,7 @@ export function MobileSetupMapPanel({
               size="large"
               endIcon={isSubmitting ? <CircularProgress color="inherit" size={18} /> : <ArrowForwardRoundedIcon />}
               disabled={isSubmitting}
-              sx={{ minHeight: 52, fontSize: "0.95rem" }}
+              sx={{ minHeight: 52 }}
             >
               {isSubmitting ? "Building trip plan..." : "Build trip plan"}
             </Button>
@@ -97,7 +97,7 @@ export function MobileSetupMapPanel({
               size="large"
               endIcon={<ArrowForwardRoundedIcon />}
               onClick={onContinue}
-              sx={{ minHeight: 52, fontSize: "0.95rem" }}
+              sx={{ minHeight: 52 }}
             >
               Next
             </Button>
@@ -124,7 +124,7 @@ export function DriverInputFlow({
   return (
     <Stack spacing={1.15} sx={{ height: "100%", minHeight: 0 }}>
       <Stack direction="row" alignItems="center" justifyContent="space-between">
-        <Typography variant="h5" sx={{ fontSize: "1.12rem" }}>
+        <Typography variant="h5">
           Trip setup
         </Typography>
       </Stack>
@@ -211,17 +211,17 @@ export function DriverInputFlow({
                     {isComplete && !isActive ? <CheckCircleRoundedIcon fontSize="small" /> : <ItemIcon fontSize="small" />}
                   </Box>
                   <Box sx={{ minWidth: 0, flex: 1 }}>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>
+                    <Typography variant="subtitle2" sx={{ fontWeight: isActive ? 700 : 600 }}>
                       {item.title.replace("?", "")}
                     </Typography>
-                    <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block", lineHeight: 1.2 }}>
+                    <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block" }}>
                       {formatStepPreview(item, formValues[item.id])}
                     </Typography>
                   </Box>
                   <Chip
                     size="small"
                     label={String(index + 1).padStart(2, "0")}
-                    sx={{ bgcolor: (theme) => theme.planner.mutedBackground, color: "text.secondary", fontWeight: 900 }}
+                    sx={{ bgcolor: (theme) => theme.planner.mutedBackground, color: "text.secondary", fontWeight: 700 }}
                   />
                 </Stack>
 
@@ -444,7 +444,7 @@ function LocationSuggestField({
             <ListItemText
               primary={option.shortLabel}
               secondary={option.label}
-              primaryTypographyProps={{ fontWeight: 800 }}
+              primaryTypographyProps={{ fontWeight: 700 }}
               secondaryTypographyProps={{ noWrap: true }}
             />
           </Box>

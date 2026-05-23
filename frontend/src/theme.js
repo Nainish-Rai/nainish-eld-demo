@@ -63,21 +63,59 @@ export function createPlannerTheme(mode = "light") {
       divider: mode === "dark" ? "rgba(148,163,184,0.16)" : "rgba(15,23,42,0.08)",
     },
     typography: {
-      fontFamily: '"Space Grotesk", "Aptos", "Trebuchet MS", sans-serif',
+      fontFamily: '"Inter", "Aptos", "Trebuchet MS", sans-serif',
+      fontSize: 16,
       h3: {
-        fontWeight: 800,
+        fontSize: "clamp(2rem, 1.55rem + 1.8vw, 3.25rem)",
+        fontWeight: 700,
         lineHeight: 1.08,
-        letterSpacing: 0,
+        letterSpacing: "-0.035em",
       },
       h4: {
-        fontWeight: 800,
-        letterSpacing: 0,
+        fontSize: "clamp(1.55rem, 1.3rem + 1vw, 2.25rem)",
+        fontWeight: 700,
+        lineHeight: 1.12,
+        letterSpacing: "-0.025em",
       },
       h5: {
-        fontWeight: 800,
+        fontSize: "clamp(1.12rem, 1.02rem + 0.4vw, 1.5rem)",
+        fontWeight: 700,
+        lineHeight: 1.18,
+        letterSpacing: "-0.018em",
+      },
+      h6: {
+        fontSize: "clamp(1rem, 0.95rem + 0.25vw, 1.2rem)",
+        fontWeight: 700,
+        lineHeight: 1.2,
+        letterSpacing: "-0.012em",
+      },
+      subtitle1: {
+        fontSize: "0.98rem",
+        fontWeight: 600,
+        lineHeight: 1.35,
+      },
+      subtitle2: {
+        fontSize: "0.86rem",
+        fontWeight: 600,
+        lineHeight: 1.35,
+      },
+      body1: {
+        fontSize: "1rem",
+        lineHeight: 1.55,
+      },
+      body2: {
+        fontSize: "0.88rem",
+        lineHeight: 1.48,
+      },
+      caption: {
+        fontSize: "0.74rem",
+        fontWeight: 500,
+        lineHeight: 1.35,
+        letterSpacing: "0.01em",
       },
       button: {
-        fontWeight: 800,
+        fontWeight: 700,
+        letterSpacing: "-0.005em",
         textTransform: "none",
       },
     },
@@ -100,7 +138,8 @@ export function createPlannerTheme(mode = "light") {
       MuiChip: {
         styleOverrides: {
           root: {
-            fontWeight: 700,
+            fontWeight: 600,
+            letterSpacing: "-0.005em",
           },
         },
       },

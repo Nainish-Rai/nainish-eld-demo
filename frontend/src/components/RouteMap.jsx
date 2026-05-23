@@ -196,7 +196,7 @@ export function LocationPreviewMap({ stops, activeStopId, fetchRouteLeg, compact
             zIndex: 3,
           }}
         >
-          <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
+          <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
             Location preview
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
@@ -220,7 +220,7 @@ export function LocationPreviewMap({ stops, activeStopId, fetchRouteLeg, compact
                   width: "100%",
                   bgcolor: stop.point ? stop.color : ((theme) => theme.planner.inactiveChipBackground),
                   color: stop.point ? "#fff" : "text.secondary",
-                  fontWeight: 800,
+                  fontWeight: 700,
                   "& .MuiChip-label": {
                     overflow: "hidden",
                     textOverflow: "ellipsis",
@@ -236,7 +236,7 @@ export function LocationPreviewMap({ stops, activeStopId, fetchRouteLeg, compact
                   key={leg.id}
                   size="small"
                   label={leg.label}
-                  sx={{ bgcolor: `${leg.color}1A`, color: leg.color, fontWeight: 800 }}
+                  sx={{ bgcolor: `${leg.color}1A`, color: leg.color, fontWeight: 700 }}
                 />
               ))}
             </Stack>
@@ -373,7 +373,7 @@ export function RouteMap({ geometry, waypoints, stops = [], fill = false }) {
                 bgcolor: `${item.color}1F`,
                 color: item.color,
                 fontSize: "0.72rem",
-                fontWeight: 800,
+                fontWeight: 700,
                 "&::before": {
                   content: '""',
                   display: "inline-block",
